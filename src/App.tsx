@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import type { FlightEntry, ParsedLogbook } from './types'
 import { extractText, isCsvFile, isSupportedFile } from './lib/extractText'
@@ -6,6 +6,16 @@ import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
 import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
 import { csvToFlights, downloadCsv, flightsToCsv } from './lib/csv'
+import { isCloudConfigured } from './lib/firebase'
+import {
+  clearCloudLogbook,
+  saveCloudLogbook,
+  signInWithGoogle,
+  signOut,
+  watchAuth,
+  watchCloudLogbook,
+  type CloudUser,
+} from './lib/cloud'
 import { FileDropzone } from './components/FileDropzone'
 import { SummaryCard } from './components/SummaryCard'
 import { CategorySummary } from './components/CategorySummary'
@@ -51,15 +61,112 @@ function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedL
   }
 }
 
+type SyncState = 'idle' | 'saving' | 'synced' | 'error'
+
+const EMPTY_BOOK: ParsedLogbook = { pilot: {}, summary: {}, flights: [] }
+
+function sameBook(a: ParsedLogbook | null, b: ParsedLogbook | null): boolean {
+  return JSON.stringify(a ?? EMPTY_BOOK) === JSON.stringify(b ?? EMPTY_BOOK)
+}
+
 export default function App() {
   const [data, setData] = useState<ParsedLogbook | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
 
+  const cloudEnabled = isCloudConfigured()
+  const [user, setUser] = useState<CloudUser | null>(null)
+  const [syncState, setSyncState] = useState<SyncState>('idle')
+  const dataRef = useRef<ParsedLogbook | null>(null)
+  dataRef.current = data
+
   useEffect(() => {
     setData(loadLogbook())
   }, [])
+
+  useEffect(() => {
+    if (!cloudEnabled) return
+    return watchAuth((u) => {
+      setUser(u)
+      if (!u) setSyncState('idle')
+    })
+  }, [cloudEnabled])
+
+  async function pushCloud(uid: string, book: ParsedLogbook | null): Promise<void> {
+    try {
+      setSyncState('saving')
+      if (book && book.flights.length > 0) {
+        await saveCloudLogbook(uid, book)
+      } else {
+        await clearCloudLogbook(uid)
+      }
+      setSyncState('synced')
+    } catch {
+      setSyncState('error')
+    }
+  }
+
+  useEffect(() => {
+    if (!user) return
+    const uid = user.uid
+    // The first snapshot after sign-in merges cloud data with whatever is on
+    // this device (so nothing is lost), then pushes the union back up. Later
+    // snapshots come from other devices and replace local state, so deletions
+    // propagate instead of resurrecting.
+    let firstSnapshot = true
+    return watchCloudLogbook(uid, (remote) => {
+      const local = dataRef.current
+      if (firstSnapshot) {
+        firstSnapshot = false
+        const merged = remote ? mergeLogbooks(local, remote) : local
+        if (merged) {
+          setData({ ...merged })
+          saveLogbook(merged)
+        }
+        if (!sameBook(merged, remote)) {
+          void pushCloud(uid, merged)
+        } else {
+          setSyncState('synced')
+        }
+        return
+      }
+      if (sameBook(remote, local)) return
+      if (remote && remote.flights.length > 0) {
+        setData(remote)
+        saveLogbook(remote)
+      } else {
+        setData(null)
+        clearLogbook()
+      }
+      setSyncState('synced')
+    })
+  }, [user])
+
+  /** Update state + localStorage, and mirror to the cloud when signed in. */
+  function persist(next: ParsedLogbook | null): void {
+    if (next && next.flights.length > 0) {
+      setData(next)
+      saveLogbook(next)
+    } else {
+      setData(null)
+      clearLogbook()
+    }
+    if (user) void pushCloud(user.uid, next)
+  }
+
+  async function handleSignIn() {
+    setError('')
+    try {
+      await signInWithGoogle()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed.')
+    }
+  }
+
+  async function handleSignOut() {
+    await signOut()
+  }
 
   const months = useMemo(() => groupByMonth(data?.flights ?? []), [data])
   const years = useMemo(() => groupByYear(months), [months])
@@ -94,8 +201,7 @@ export default function App() {
         merged = mergeLogbooks(merged, parsed)
       }
       if (merged && merged.flights.length > 0) {
-        setData({ ...merged })
-        saveLogbook(merged)
+        persist({ ...merged })
         if (addedTotal === 0) {
           setError('No flight rows were recognized in that file. Try a clearer scan or a PDF.')
         }
@@ -113,8 +219,13 @@ export default function App() {
   }
 
   function handleClear() {
-    setData(null)
-    clearLogbook()
+    if (user) {
+      const confirmed = window.confirm(
+        'You are signed in, so this also clears the logbook stored in the cloud for all your devices. Continue?',
+      )
+      if (!confirmed) return
+    }
+    persist(null)
     setError('')
   }
 
@@ -138,14 +249,7 @@ export default function App() {
     )
     if (!confirmed) return
     const flights = data.flights.filter((f) => !f.date.startsWith(`${year}/`))
-    if (flights.length === 0) {
-      setData(null)
-      clearLogbook()
-    } else {
-      const next = { ...data, flights }
-      setData(next)
-      saveLogbook(next)
-    }
+    persist(flights.length === 0 ? null : { ...data, flights })
   }
 
   const hasData = Boolean(data && data.flights.length > 0)
@@ -164,16 +268,46 @@ export default function App() {
             </p>
           </div>
         </div>
-        {hasData && (
-          <div className="app__actions">
-            <button type="button" className="btn btn--ghost" onClick={handleExport}>
-              Export CSV
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={handleClear}>
-              Clear
-            </button>
-          </div>
-        )}
+        <div className="app__actions">
+          {cloudEnabled &&
+            (user ? (
+              <div className="cloud">
+                <span
+                  className={`cloud__status cloud__status--${syncState}`}
+                  title={
+                    syncState === 'error'
+                      ? 'Cloud save failed — changes are kept locally'
+                      : undefined
+                  }
+                >
+                  {syncState === 'saving' && 'Syncing…'}
+                  {syncState === 'synced' && 'Synced'}
+                  {syncState === 'error' && 'Sync error'}
+                  {syncState === 'idle' && 'Connecting…'}
+                </span>
+                <span className="cloud__user" title={user.email ?? undefined}>
+                  {user.displayName ?? user.email ?? 'Signed in'}
+                </span>
+                <button type="button" className="btn btn--ghost btn--small" onClick={handleSignOut}>
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn btn--ghost" onClick={handleSignIn}>
+                Sign in with Google
+              </button>
+            ))}
+          {hasData && (
+            <>
+              <button type="button" className="btn btn--ghost" onClick={handleExport}>
+                Export CSV
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={handleClear}>
+                Clear
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       <main className="app__main">
@@ -209,15 +343,19 @@ export default function App() {
             <h2 className="empty__title">No logbook loaded yet</h2>
             <p className="empty__text">
               Upload a scan or photo of your flight log above. Flights are grouped by month
-              with per-month subtotals, and each year is summarized separately. Everything
-              stays in your browser.
+              with per-month subtotals, and each year is summarized separately.{' '}
+              {cloudEnabled
+                ? 'Sign in with Google to sync your logbook across your phone, iPad, and computer.'
+                : 'Everything stays in your browser.'}
             </p>
           </section>
         )}
       </main>
 
       <footer className="app__footer">
-        Runs entirely in your browser · PDFs are read as text, images via on-device OCR
+        {cloudEnabled
+          ? 'PDFs are read as text, images via on-device OCR · Sign in to sync across devices'
+          : 'Runs entirely in your browser · PDFs are read as text, images via on-device OCR'}
       </footer>
     </div>
   )

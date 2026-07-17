@@ -49,7 +49,48 @@
 
 .app__actions {
   display: flex;
+  align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Cloud sync status */
+.cloud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cloud__status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-mute);
+}
+
+.cloud__status--synced {
+  color: var(--good);
+  border-color: rgba(87, 217, 163, 0.4);
+}
+
+.cloud__status--saving {
+  color: var(--accent-2);
+  border-color: rgba(139, 224, 255, 0.4);
+}
+
+.cloud__status--error {
+  color: var(--danger);
+  border-color: rgba(255, 138, 138, 0.4);
+}
+
+.cloud__user {
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn {
