@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import type { FlightEntry, ParsedLogbook } from './types'
-import { extractText, isCsvFile, isSupportedFile } from './lib/extractText'
+import { extractText, isCsvFile, isHeicFile, isSupportedFile } from './lib/extractText'
 import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
 import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
@@ -173,6 +173,12 @@ export default function App() {
 
   async function handleFiles(files: File[]) {
     setError('')
+    if (files.some(isHeicFile)) {
+      setError(
+        'iPhone HEIC photos are not supported yet. In the share sheet choose Options → Most Compatible to save as JPG, then upload that.',
+      )
+      return
+    }
     const supported = files.filter(isSupportedFile)
     if (supported.length === 0) {
       setError('Unsupported file. Please upload a PDF, JPG, PNG, or an exported CSV.')
@@ -207,7 +213,7 @@ export default function App() {
         }
       } else {
         setError(
-          'No flight rows were recognized. For photos, use a sharp, well-lit, straight-on image.',
+          'No flight rows were recognized. Tip: AFLIS에서 PDF로 저장해 올리면 가장 정확합니다. 사진/캡처는 JPG·PNG로, 표가 꽉 차게 찍어 주세요 (iPhone HEIC 불가).',
         )
       }
     } catch (err) {
