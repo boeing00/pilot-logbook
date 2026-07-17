@@ -213,7 +213,7 @@ export default function App() {
         }
       } else {
         setError(
-          'No flight rows were recognized. Tip: use a JPG/PNG (not HEIC), fill the frame with the table, and keep the page flat and well lit. A text PDF works most reliably.',
+          'No flight rows were recognized. Tip: AFLIS에서 PDF로 저장해 올리면 가장 정확합니다. 사진/캡처는 JPG·PNG로, 표가 꽉 차게 찍어 주세요 (iPhone HEIC 불가).',
         )
       }
     } catch (err) {

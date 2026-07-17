@@ -83,7 +83,7 @@ export function parseFlightLine(line: string): FlightEntry | null {
     if (/^[A-Z0-9]{1,4}$/i.test(t)) irrParts.push(t)
     cursor++
   }
-  const irr = irrParts.join(' ')
+  const irr = irrParts.join(' ').toUpperCase()
 
   // Best-effort report-out / report-in (optional — not shown in the UI).
   let reportOut = ''
@@ -104,9 +104,9 @@ export function parseFlightLine(line: string): FlightEntry | null {
   const remainder = afterRoute.slice(cursor).join(' ')
   const times = extractTimes(remainder)
   if (times.length < 4) return null
-  // Prefer the last four valid times — Out/In times (if still present and
-  // mangled into this run) tend to sit earlier than Duty/T-S/NT/IT.
-  const durationTimes = times.length >= 6 ? times.slice(-4) : times.slice(0, 4)
+  // Prefer the last four valid times — Out/In fragments that leaked into the
+  // remainder sit earlier than Duty / T-S / N/T / I/T.
+  const durationTimes = times.length > 4 ? times.slice(-4) : times
   const [dutyMin, flightMin, nightMin, instrumentMin] = durationTimes.map(parseDurationToMinutes)
 
   const asterisks = (remainder.match(/\*/g) ?? []).length

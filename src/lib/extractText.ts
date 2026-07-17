@@ -101,7 +101,7 @@ async function extractImageText(file: File, onProgress?: ProgressFn): Promise<st
   })
 
   try {
-    const modes = [Tesseract.PSM.SINGLE_BLOCK, Tesseract.PSM.AUTO] as const
+    const modes = [Tesseract.PSM.SINGLE_COLUMN, Tesseract.PSM.AUTO, Tesseract.PSM.SINGLE_BLOCK] as const
     let best = ''
     let bestScore = -1
 
@@ -122,8 +122,8 @@ async function extractImageText(file: File, onProgress?: ProgressFn): Promise<st
         bestScore = score
         best = cleaned
       }
-      // Good enough — no need for a second, slower pass.
-      if (score >= 3) break
+      // AFLIS pages usually have a dozen sectors — stop early when we look good.
+      if (score >= 8) break
     }
 
     return best

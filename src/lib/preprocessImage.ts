@@ -6,12 +6,12 @@
 export async function prepareImageForOcr(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file)
   try {
-    const maxEdge = 2800
-    const minEdge = 1600
+    const maxEdge = 3200
+    const minEdge = 2000
     const long = Math.max(bitmap.width, bitmap.height)
     let scale = 1
     if (long > maxEdge) scale = maxEdge / long
-    else if (long < minEdge) scale = Math.min(2.5, minEdge / long)
+    else if (long < minEdge) scale = Math.min(3, minEdge / long)
 
     const w = Math.max(1, Math.round(bitmap.width * scale))
     const h = Math.max(1, Math.round(bitmap.height * scale))
