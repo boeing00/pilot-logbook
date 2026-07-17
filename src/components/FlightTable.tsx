@@ -16,8 +16,6 @@ export function FlightTable({ flights }: Props) {
             <th>Flight</th>
             <th>Route</th>
             <th>Duty Code</th>
-            <th>Out</th>
-            <th>In</th>
             <th className="num">Duty</th>
             <th className="num">Flight</th>
             <th className="num">Night</th>
@@ -45,8 +43,6 @@ export function FlightTable({ flights }: Props) {
               <td className="mono">
                 {f.irr ? <span className="duty-code">{f.irr}</span> : <span className="dim">–</span>}
               </td>
-              <td className="mono dim">{f.reportOut}</td>
-              <td className="mono dim">{f.reportIn}</td>
               <td className="num mono">{formatMinutes(f.dutyMin)}</td>
               <td className="num mono strong">{formatMinutes(f.flightMin)}</td>
               <td className="num mono">{formatMinutes(f.nightMin)}</td>
