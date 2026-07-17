@@ -1,26 +1,46 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import type { FlightEntry, ParsedLogbook } from './types'
-import { extractText, isSupportedFile } from './lib/extractText'
+import { extractText, isCsvFile, isSupportedFile } from './lib/extractText'
 import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
 import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
-import { downloadCsv, flightsToCsv } from './lib/csv'
+import { csvToFlights, downloadCsv, flightsToCsv } from './lib/csv'
 import { FileDropzone } from './components/FileDropzone'
 import { SummaryCard } from './components/SummaryCard'
 import { CategorySummary } from './components/CategorySummary'
 import { YearSummary } from './components/YearSummary'
 import { MonthSection } from './components/MonthSection'
 
+/**
+ * Identity for de-duplication when merging sources. Report times are excluded
+ * because CSV exports no longer carry them, so an imported CSV row must match
+ * the same sector parsed from a PDF/photo.
+ */
 function flightId(f: FlightEntry): string {
-  return `${f.date}|${f.flightNo}|${f.from}|${f.to}|${f.reportOut}`
+  return `${f.date}|${f.flightNo}|${f.from}|${f.to}`
 }
 
 function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedLogbook {
   if (!prev) return next
   const byId = new Map<string, FlightEntry>()
   for (const f of prev.flights) byId.set(flightId(f), f)
-  for (const f of next.flights) byId.set(flightId(f), f)
+  for (const f of next.flights) {
+    const existing = byId.get(flightId(f))
+    // Keep fields the newer source is missing (e.g. CSV imports have no report times).
+    byId.set(
+      flightId(f),
+      existing
+        ? {
+            ...f,
+            reportOut: f.reportOut || existing.reportOut,
+            reportIn: f.reportIn || existing.reportIn,
+            tail: f.tail || existing.tail,
+            irr: f.irr || existing.irr,
+          }
+        : f,
+    )
+  }
   const flights = [...byId.values()].sort((a, b) =>
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   )
@@ -48,7 +68,7 @@ export default function App() {
     setError('')
     const supported = files.filter(isSupportedFile)
     if (supported.length === 0) {
-      setError('Unsupported file. Please upload a PDF, JPG, or PNG.')
+      setError('Unsupported file. Please upload a PDF, JPG, PNG, or an exported CSV.')
       return
     }
 
@@ -58,12 +78,18 @@ export default function App() {
       let addedTotal = 0
       for (const file of supported) {
         setProgress(`Reading ${file.name}…`)
-        const text = await extractText(file, (message, ratio) => {
-          setProgress(
-            ratio != null ? `${file.name}: ${message} ${Math.round(ratio * 100)}%` : message,
-          )
-        })
-        const parsed = parseLogbook(text)
+        let parsed: ParsedLogbook
+        if (isCsvFile(file)) {
+          const flights = csvToFlights(await file.text())
+          parsed = { pilot: {}, summary: {}, flights }
+        } else {
+          const text = await extractText(file, (message, ratio) => {
+            setProgress(
+              ratio != null ? `${file.name}: ${message} ${Math.round(ratio * 100)}%` : message,
+            )
+          })
+          parsed = parseLogbook(text)
+        }
         addedTotal += parsed.flights.length
         merged = mergeLogbooks(merged, parsed)
       }
@@ -95,6 +121,31 @@ export default function App() {
   function handleExport() {
     if (!data) return
     downloadCsv('pilot-logbook.csv', flightsToCsv(data.flights))
+  }
+
+  function handleExportYear(year: string) {
+    if (!data) return
+    const flights = data.flights.filter((f) => f.date.startsWith(`${year}/`))
+    if (flights.length === 0) return
+    downloadCsv(`pilot-logbook-${year}.csv`, flightsToCsv(flights))
+  }
+
+  function handleRemoveYear(year: string) {
+    if (!data) return
+    const confirmed = window.confirm(
+      `Remove all ${year} flights from the browser?\n` +
+        `Export the ${year} CSV first if you want to keep an archive — you can re-import it anytime.`,
+    )
+    if (!confirmed) return
+    const flights = data.flights.filter((f) => !f.date.startsWith(`${year}/`))
+    if (flights.length === 0) {
+      setData(null)
+      clearLogbook()
+    } else {
+      const next = { ...data, flights }
+      setData(next)
+      saveLogbook(next)
+    }
   }
 
   const hasData = Boolean(data && data.flights.length > 0)
@@ -138,7 +189,11 @@ export default function App() {
 
             {years.map((year) => (
               <div className="year-block" key={year.year}>
-                <YearSummary year={year} />
+                <YearSummary
+                  year={year}
+                  onExportYear={handleExportYear}
+                  onRemoveYear={handleRemoveYear}
+                />
                 <div className="month-list">
                   {year.months.map((m, idx) => (
                     <MonthSection key={m.key} group={m} defaultOpen={idx === 0} />

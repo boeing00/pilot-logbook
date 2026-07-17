@@ -38,7 +38,7 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,application/pdf,image/*"
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.csv,application/pdf,image/*,text/csv"
         multiple
         hidden
         onChange={(e) => {
@@ -57,9 +57,10 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
           <div className="dropzone__icon" aria-hidden>
             &#9992;
           </div>
-          <p className="dropzone__title">Drop a logbook photo, JPG, or PDF</p>
+          <p className="dropzone__title">Drop a logbook photo, JPG, PDF, or exported CSV</p>
           <p className="dropzone__hint">
-            or click to browse — phone photos are read with on-device OCR
+            or click to browse — phone photos are read with on-device OCR, and CSVs exported
+            from this app are imported back as-is
           </p>
         </>
       )}

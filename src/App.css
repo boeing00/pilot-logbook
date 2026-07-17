@@ -250,6 +250,23 @@
   font-size: 13px;
 }
 
+.year__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn--small {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.btn--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .month-list {
   display: flex;
   flex-direction: column;

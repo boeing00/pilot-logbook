@@ -98,9 +98,14 @@ async function extractImageText(file: File, onProgress?: ProgressFn): Promise<st
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp']
 
+export function isCsvFile(file: File): boolean {
+  return file.type === 'text/csv' || /\.csv$/i.test(file.name)
+}
+
 export function isSupportedFile(file: File): boolean {
   if (file.type === 'application/pdf') return true
   if (IMAGE_TYPES.includes(file.type)) return true
+  if (isCsvFile(file)) return true
   return /\.(pdf|jpe?g|png|webp|bmp)$/i.test(file.name)
 }
 
