@@ -1,6 +1,8 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import Tesseract from 'tesseract.js'
+import { cleanupOcrText } from './ocrCleanup'
+import { prepareImageForOcr } from './preprocessImage'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -71,35 +73,85 @@ async function extractPdfText(file: File, onProgress?: ProgressFn): Promise<stri
   return pages.join('\n')
 }
 
-/** OCR an image file (JPG/PNG, e.g. a phone photo) using tesseract.js. */
+/**
+ * OCR an image file (JPG/PNG, e.g. a phone photo). The image is preprocessed
+ * (scaled, grayscale, contrast) and recognized with table-friendly Tesseract
+ * settings. If the first pass looks empty, a second pass with automatic page
+ * segmentation is tried. Common OCR substitutions are cleaned up afterward.
+ */
 async function extractImageText(file: File, onProgress?: ProgressFn): Promise<string> {
-  onProgress?.('Loading OCR engine…', 0)
+  onProgress?.('Preparing image…', 0.05)
+  let source: File | Blob = file
+  try {
+    source = await prepareImageForOcr(file)
+  } catch {
+    // Fall back to the original file if canvas preprocessing fails (e.g. HEIC).
+    source = file
+  }
+
+  onProgress?.('Loading OCR engine…', 0.1)
   const worker = await Tesseract.createWorker('eng', 1, {
     logger: (m) => {
       if (m.status === 'recognizing text') {
-        onProgress?.('Recognizing text…', m.progress)
-      } else {
+        onProgress?.('Recognizing text…', 0.15 + m.progress * 0.75)
+      } else if (m.status) {
         onProgress?.(m.status)
       }
     },
   })
+
   try {
-    // Whitelist the characters that appear in a logbook to reduce OCR noise.
-    await worker.setParameters({
-      tessedit_char_whitelist:
-        '0123456789:/-* ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-    })
-    const { data } = await worker.recognize(file)
-    return data.text
+    const modes = [Tesseract.PSM.SINGLE_BLOCK, Tesseract.PSM.AUTO] as const
+    let best = ''
+    let bestScore = -1
+
+    for (let i = 0; i < modes.length; i++) {
+      const mode = modes[i]
+      onProgress?.(
+        i === 0 ? 'Recognizing text…' : 'Retrying OCR with alternate layout…',
+        0.15 + (i / modes.length) * 0.7,
+      )
+      await worker.setParameters({
+        tessedit_pageseg_mode: mode,
+        preserve_interword_spaces: '1',
+      })
+      const { data } = await worker.recognize(source)
+      const cleaned = cleanupOcrText(data.text)
+      const score = scoreOcrText(cleaned)
+      if (score > bestScore) {
+        bestScore = score
+        best = cleaned
+      }
+      // Good enough — no need for a second, slower pass.
+      if (score >= 3) break
+    }
+
+    return best
   } finally {
     await worker.terminate()
   }
+}
+
+/** Rough quality score: count of lines that look like logbook flight rows. */
+function scoreOcrText(text: string): number {
+  const dates = text.match(/\d{4}\/\d{2}\/\d{2}/g) ?? []
+  const routes = text.match(/\b[A-Z]{3}-[A-Z]{3}\b/g) ?? []
+  return Math.min(dates.length, routes.length)
 }
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp']
 
 export function isCsvFile(file: File): boolean {
   return file.type === 'text/csv' || /\.csv$/i.test(file.name)
+}
+
+export function isHeicFile(file: File): boolean {
+  return (
+    file.type === 'image/heic' ||
+    file.type === 'image/heif' ||
+    /\.heic$/i.test(file.name) ||
+    /\.heif$/i.test(file.name)
+  )
 }
 
 export function isSupportedFile(file: File): boolean {
@@ -110,6 +162,11 @@ export function isSupportedFile(file: File): boolean {
 }
 
 export async function extractText(file: File, onProgress?: ProgressFn): Promise<string> {
+  if (isHeicFile(file)) {
+    throw new Error(
+      'iPhone HEIC photos are not supported yet. In Photos, tap Share → Options → Most Compatible (JPG), or export as PDF.',
+    )
+  }
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
   if (isPdf) return extractPdfText(file, onProgress)
   return extractImageText(file, onProgress)

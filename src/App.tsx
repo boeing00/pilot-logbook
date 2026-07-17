@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import type { FlightEntry, ParsedLogbook } from './types'
-import { extractText, isCsvFile, isSupportedFile } from './lib/extractText'
+import { extractText, isCsvFile, isHeicFile, isSupportedFile } from './lib/extractText'
 import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
 import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
@@ -173,6 +173,12 @@ export default function App() {
 
   async function handleFiles(files: File[]) {
     setError('')
+    if (files.some(isHeicFile)) {
+      setError(
+        'iPhone HEIC photos are not supported yet. In the share sheet choose Options → Most Compatible to save as JPG, then upload that.',
+      )
+      return
+    }
     const supported = files.filter(isSupportedFile)
     if (supported.length === 0) {
       setError('Unsupported file. Please upload a PDF, JPG, PNG, or an exported CSV.')
@@ -207,7 +213,7 @@ export default function App() {
         }
       } else {
         setError(
-          'No flight rows were recognized. For photos, use a sharp, well-lit, straight-on image.',
+          'No flight rows were recognized. Tip: use a JPG/PNG (not HEIC), fill the frame with the table, and keep the page flat and well lit. A text PDF works most reliably.',
         )
       }
     } catch (err) {

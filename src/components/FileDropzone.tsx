@@ -59,8 +59,8 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
           </div>
           <p className="dropzone__title">Drop a logbook photo, JPG, PDF, or exported CSV</p>
           <p className="dropzone__hint">
-            or click to browse — phone photos are read with on-device OCR, and CSVs exported
-            from this app are imported back as-is
+            or click to browse — use JPG/PNG (not iPhone HEIC); photos are preprocessed and OCR’d
+            on-device
           </p>
         </>
       )}
