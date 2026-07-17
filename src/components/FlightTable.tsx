@@ -15,13 +15,15 @@ export function FlightTable({ flights }: Props) {
             <th>A/C</th>
             <th>Flight</th>
             <th>Route</th>
+            <th>Duty Code</th>
             <th>Out</th>
             <th>In</th>
             <th className="num">Duty</th>
             <th className="num">Flight</th>
             <th className="num">Night</th>
             <th className="num">Inst</th>
-            <th className="center">T/O·L/D</th>
+            <th className="center">T/O</th>
+            <th className="center">L/D</th>
           </tr>
         </thead>
         <tbody>
@@ -40,17 +42,17 @@ export function FlightTable({ flights }: Props) {
                   {f.to}
                 </span>
               </td>
+              <td className="mono">
+                {f.irr ? <span className="duty-code">{f.irr}</span> : <span className="dim">–</span>}
+              </td>
               <td className="mono dim">{f.reportOut}</td>
               <td className="mono dim">{f.reportIn}</td>
               <td className="num mono">{formatMinutes(f.dutyMin)}</td>
               <td className="num mono strong">{formatMinutes(f.flightMin)}</td>
               <td className="num mono">{formatMinutes(f.nightMin)}</td>
               <td className="num mono">{formatMinutes(f.instrumentMin)}</td>
-              <td className="center">
-                {f.takeoff && <span className="dot" title="Take-off">▲</span>}
-                {f.landing && <span className="dot" title="Landing">▼</span>}
-                {!f.takeoff && !f.landing && <span className="dim">–</span>}
-              </td>
+              <td className="center mono">{f.takeoff ? '1' : <span className="dim">–</span>}</td>
+              <td className="center mono">{f.landing ? '1' : <span className="dim">–</span>}</td>
             </tr>
           ))}
         </tbody>

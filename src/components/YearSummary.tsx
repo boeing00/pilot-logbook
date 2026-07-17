@@ -1,5 +1,6 @@
 import type { YearGroup } from '../types'
 import { TotalsRow } from './TotalsRow'
+import { CategoryBreakdown } from './CategoryBreakdown'
 
 interface Props {
   year: YearGroup
@@ -13,6 +14,9 @@ export function YearSummary({ year }: Props) {
         <span className="year__months">{year.months.length} months logged</span>
       </header>
       <TotalsRow totals={year.totals} byAircraft={year.byAircraft} variant="year" />
+      <div className="year__categories">
+        <CategoryBreakdown byCategory={year.byCategory} />
+      </div>
     </section>
   )
 }
