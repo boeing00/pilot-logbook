@@ -411,45 +411,40 @@
   letter-spacing: 0.04em;
 }
 
-/* Per-category flight sections inside a month */
-.cat-section__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 14px 22px 10px;
-  border-top: 1px solid var(--line);
-}
-
-.cat-section--pic .cat-section__title {
-  color: var(--good);
-}
-
-.cat-section--auditor .cat-section__title {
-  color: var(--gold);
-}
-
-.cat-section__title {
-  font-size: 16px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.cat-section__meta {
-  color: var(--text-dim);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+/* Duty code — kept to a narrow column */
+.flight-table th.col-duty-code,
+.flight-table td.col-duty-code {
+  padding-left: 6px;
+  padding-right: 6px;
+  width: 1%;
+  text-align: center;
 }
 
 .duty-code {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 999px;
   background: rgba(79, 176, 255, 0.12);
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+/* Auditor sectors stay in the date-ordered table, just rendered lighter */
+.flight-row--auditor td,
+.flight-row--auditor .strong,
+.flight-row--auditor .ac,
+.flight-row--auditor .route__arrow {
+  color: var(--text-mute);
+}
+
+.flight-row--auditor .tail,
+.flight-row--auditor .dim {
+  color: rgba(111, 136, 168, 0.6);
+}
+
+.flight-row--auditor .duty-code {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-mute);
 }
 
 /* Month */
