@@ -8,6 +8,7 @@ import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
 import { downloadCsv, flightsToCsv } from './lib/csv'
 import { FileDropzone } from './components/FileDropzone'
 import { SummaryCard } from './components/SummaryCard'
+import { CategorySummary } from './components/CategorySummary'
 import { YearSummary } from './components/YearSummary'
 import { MonthSection } from './components/MonthSection'
 
@@ -132,6 +133,8 @@ export default function App() {
         {hasData && data && (
           <>
             <SummaryCard pilot={data.pilot} summary={data.summary} />
+
+            <CategorySummary flights={data.flights} />
 
             {years.map((year) => (
               <div className="year-block" key={year.year}>

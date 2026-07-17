@@ -1,4 +1,5 @@
 import type { FlightEntry } from '../types'
+import { CATEGORY_LABELS, flightCategory } from './category'
 import { formatMinutes } from './time'
 
 const HEADER = [
@@ -8,15 +9,16 @@ const HEADER = [
   'FlightNo',
   'From',
   'To',
-  'IRR',
+  'DutyCode',
+  'Category',
   'ReportOut',
   'ReportIn',
   'Duty',
   'Flight',
   'Night',
   'Instrument',
-  'Takeoff',
-  'Landing',
+  'T/O',
+  'L/D',
 ]
 
 function cell(value: string): string {
@@ -34,6 +36,7 @@ export function flightsToCsv(flights: FlightEntry[]): string {
       f.from,
       f.to,
       f.irr,
+      CATEGORY_LABELS[flightCategory(f)],
       f.reportOut,
       f.reportIn,
       formatMinutes(f.dutyMin),

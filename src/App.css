@@ -316,6 +316,142 @@
   color: var(--text);
 }
 
+.badge--pic {
+  background: rgba(87, 217, 163, 0.1);
+  border-color: rgba(87, 217, 163, 0.35);
+}
+
+.badge--auditor {
+  background: rgba(255, 212, 121, 0.1);
+  border-color: rgba(255, 212, 121, 0.35);
+}
+
+.badge__meta {
+  margin-left: 6px;
+  color: var(--text-mute);
+}
+
+.month__categories,
+.year__categories {
+  padding: 0 22px 16px;
+}
+
+.month__categories .totals__aircraft,
+.year__categories .totals__aircraft {
+  margin-top: 0;
+}
+
+/* Category summary cards (A380 PIC vs Auditor) */
+.cat-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.cat-card {
+  padding: 18px 22px;
+}
+
+.cat-card--pic {
+  border-left: 4px solid var(--good);
+}
+
+.cat-card--auditor {
+  border-left: 4px solid var(--gold);
+}
+
+.cat-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cat-card__title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.cat-card--pic .cat-card__title {
+  color: var(--good);
+}
+
+.cat-card--auditor .cat-card__title {
+  color: var(--gold);
+}
+
+.cat-card__count {
+  color: var(--text-mute);
+  font-size: 13px;
+}
+
+.cat-card__grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 10px;
+}
+
+.cat-card__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cat-card__value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.cat-card__label {
+  color: var(--text-mute);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Per-category flight sections inside a month */
+.cat-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 22px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.cat-section--pic .cat-section__title {
+  color: var(--good);
+}
+
+.cat-section--auditor .cat-section__title {
+  color: var(--gold);
+}
+
+.cat-section__title {
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cat-section__meta {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.duty-code {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 176, 255, 0.12);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
 /* Month */
 .month__head {
   width: 100%;

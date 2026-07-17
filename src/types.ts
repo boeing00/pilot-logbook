@@ -69,6 +69,18 @@ export interface Totals {
   landings: number
 }
 
+/**
+ * Flight classification requested by the pilot:
+ * - 'auditor': any non-A380 sector, or any sector whose duty code contains "Z".
+ * - 'pic': every remaining A380 sector (logged as A380 PIC time).
+ */
+export type FlightCategory = 'pic' | 'auditor'
+
+export interface CategoryTotals {
+  pic: Totals
+  auditor: Totals
+}
+
 export interface MonthGroup {
   /** Month key, YYYY-MM. */
   key: string
@@ -78,6 +90,8 @@ export interface MonthGroup {
   totals: Totals
   /** Per-aircraft-type flight minutes within the month. */
   byAircraft: Record<string, number>
+  /** A380 PIC vs Auditor split within the month. */
+  byCategory: CategoryTotals
 }
 
 export interface YearGroup {
@@ -85,4 +99,6 @@ export interface YearGroup {
   months: MonthGroup[]
   totals: Totals
   byAircraft: Record<string, number>
+  /** A380 PIC vs Auditor split within the year. */
+  byCategory: CategoryTotals
 }
