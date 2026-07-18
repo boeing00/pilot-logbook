@@ -48,7 +48,25 @@ VITE_FIREBASE_APP_ID=...
    - 로그인 시 기기에 있던 기록과 클라우드 기록이 자동 병합됩니다(중복 제거).
    - 업로드·연도 삭제·Clear 등 모든 변경이 즉시 클라우드에 반영되고, 다른 기기에는 실시간으로 내려옵니다.
 
-배포는 `npm run build` 후 `dist` 폴더를 Firebase Hosting, Netlify, GitHub Pages 등 정적 호스팅에 올리면 됩니다. 배포 도메인을 Firebase Console의 **Authentication → Settings → Authorized domains**에 추가하세요.
+## 배포 (아이패드·폰에서 쓰기)
+
+로컬(`localhost`)은 이 PC에서만 됩니다. 다른 기기에서 쓰려면 Firebase Hosting에 배포하세요.
+
+1. `.firebaserc`의 `YOUR_FIREBASE_PROJECT_ID`를 본인 Firebase **프로젝트 ID**로 바꿉니다.
+2. `.env.local`에 실제 Firebase 웹 앱 설정값 4개가 들어 있는지 확인합니다.  
+   (`VITE_FIREBASE_USE_EMULATOR`는 비우거나 삭제 — 배포 빌드에는 넣지 마세요.)
+3. 터미널에서:
+
+```bash
+npx firebase-tools login
+npm run deploy
+```
+
+4. 끝나면 `https://<프로젝트ID>.web.app` 주소가 나옵니다.
+5. Firebase Console → **Authentication → Settings → Authorized domains**에 그 도메인(`*.web.app`)이 있는지 확인합니다 (보통 자동 추가됨).
+6. 아이패드·폰 브라우저에서 그 주소를 열고 **Sign in with Google** → 같은 계정으로 로그인하면 동기화됩니다.
+
+홈 화면에 추가(아이패드: 공유 → 홈 화면에 추가)하면 앱처럼 쓸 수 있습니다.
 
 ## 로컬 개발용 에뮬레이터 테스트
 
