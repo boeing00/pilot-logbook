@@ -19,6 +19,38 @@ const HEADER = [
   'L/D',
 ]
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/**
+ * Normalize a date cell to 'YYYY/MM/DD'. Handles the formats Excel commonly
+ * produces when a CSV is opened, edited, and re-saved: hyphen/dot separators,
+ * US-style M/D/YYYY, a leading "force text" apostrophe, and Excel's serial
+ * date number (days since 1899-12-30). Returns null if unrecognized.
+ */
+function normalizeDate(raw: string): string | null {
+  const s = raw.trim().replace(/^'/, '')
+  if (s === '') return null
+
+  if (/^\d{4,6}$/.test(s)) {
+    const serial = Number(s)
+    if (serial > 20000 && serial < 90000) {
+      const ms = Date.UTC(1899, 11, 30) + serial * 86400000
+      const d = new Date(ms)
+      return `${d.getUTCFullYear()}/${pad2(d.getUTCMonth() + 1)}/${pad2(d.getUTCDate())}`
+    }
+  }
+
+  let m = s.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/)
+  if (m) return `${m[1]}/${pad2(+m[2])}/${pad2(+m[3])}`
+
+  m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
+  if (m) return `${m[3]}/${pad2(+m[1])}/${pad2(+m[2])}`
+
+  return null
+}
+
 function cell(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
   return value
@@ -48,8 +80,32 @@ export function flightsToCsv(flights: FlightEntry[]): string {
   return [HEADER.join(','), ...rows].join('\n')
 }
 
+/**
+ * Excel's "CSV (Comma delimited)" export uses the system list separator,
+ * which is ';' on many non-US locales (and some Korean setups), not ','.
+ * Detect it from the header line so a round-tripped export still parses.
+ */
+function detectDelimiter(firstLine: string): string {
+  const counts: Record<string, number> = {
+    ',': (firstLine.match(/,/g) ?? []).length,
+    ';': (firstLine.match(/;/g) ?? []).length,
+    '\t': (firstLine.match(/\t/g) ?? []).length,
+  }
+  let best = ','
+  for (const d of [';', '\t']) {
+    if (counts[d] > counts[best]) best = d
+  }
+  return best
+}
+
 /** Split raw CSV text into rows of cells, honoring quoted cells. */
 function parseCsvRows(text: string): string[][] {
+  // Strip a UTF-8 BOM (Excel adds one to "CSV UTF-8" exports); left in place
+  // it would make the first header cell read as "\uFEFFDate" and fail to match.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+  const firstLineEnd = text.search(/\r\n|\n|\r/)
+  const delimiter = detectDelimiter(firstLineEnd === -1 ? text : text.slice(0, firstLineEnd))
+
   const rows: string[][] = []
   let row: string[] = []
   let cellBuf = ''
@@ -70,7 +126,7 @@ function parseCsvRows(text: string): string[][] {
       }
     } else if (ch === '"') {
       inQuotes = true
-    } else if (ch === ',') {
+    } else if (ch === delimiter) {
       row.push(cellBuf)
       cellBuf = ''
     } else if (ch === '\n' || ch === '\r') {
@@ -134,8 +190,8 @@ export function csvToFlights(text: string): FlightEntry[] {
 
   const flights: FlightEntry[] = []
   for (const row of rows.slice(1)) {
-    const date = get(row, col.date)
-    if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) continue
+    const date = normalizeDate(get(row, col.date))
+    if (!date) continue
     flights.push({
       date,
       aircraft: get(row, col.aircraft),

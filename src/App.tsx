@@ -248,6 +248,7 @@ export default function App() {
     try {
       let merged = data
       let addedTotal = 0
+      let csvParseFailed = false
       for (const file of supported) {
         setProgress(`Reading ${file.name}…`)
         if (isCsvFile(file)) {
@@ -257,7 +258,10 @@ export default function App() {
           // deletions in the CSV are all applied as-is (no merging with the
           // PDF/photo data for those years).
           const flights = csvToFlights(await file.text())
-          if (flights.length === 0) continue
+          if (flights.length === 0) {
+            csvParseFailed = true
+            continue
+          }
           const { book, removed } = applyCsvImport(merged, flights)
           if (removed > 0) {
             const ok = window.confirm(
@@ -282,9 +286,17 @@ export default function App() {
       }
       if (merged && merged.flights.length > 0) {
         persist({ ...merged })
-        if (addedTotal === 0) {
+        if (addedTotal === 0 && csvParseFailed) {
+          setError(
+            'CSV를 읽지 못했습니다. Export CSV로 받은 파일을 그대로 편집했는지, 헤더 행(Date, Aircraft, FlightNo …)을 지우지 않았는지, Date 열이 YYYY/MM/DD 형식(또는 엑셀 날짜)인지 확인해 주세요.',
+          )
+        } else if (addedTotal === 0) {
           setError('No flight rows were recognized in that file. Try a clearer scan or a PDF.')
         }
+      } else if (csvParseFailed) {
+        setError(
+          'CSV에서 비행 기록을 찾지 못했습니다. Export CSV로 받은 파일을 그대로 편집했는지, 헤더 행을 지우지 않았는지, Date 열이 YYYY/MM/DD 형식인지 확인해 주세요.',
+        )
       } else {
         setError(
           'No flight rows were recognized. Tip: AFLIS에서 PDF로 저장해 올리면 가장 정확합니다. 사진/캡처는 JPG·PNG로, 표가 꽉 차게 찍어 주세요 (iPhone HEIC 불가).',
