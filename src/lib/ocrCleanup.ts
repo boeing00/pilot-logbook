@@ -26,6 +26,8 @@ export function cleanupOcrText(raw: string): string {
     .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
     // Fancy slashes
     .replace(/[\u2044\u2215\uFF0F]/g, '/')
+    // Fullwidth / typographic asterisks \u2192 ASCII '*' (T/O / L/D markers)
+    .replace(/[\uFF0A\u2731\u2217\u204E]/g, '*')
 
   // Dates like "2025 . 03 . 08" or "2025 - 03 - 08" → "2025/03/08"
   text = text.replace(

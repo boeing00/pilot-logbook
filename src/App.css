@@ -667,3 +667,54 @@
   font-size: 12px;
   padding-top: 16px;
 }
+
+/* City visit statistics */
+.city-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 10px;
+}
+
+.city-stats--compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: none;
+  margin-top: 4px;
+  padding-top: 0;
+}
+
+.city-stats__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.city-stats__label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.city-stats__chips,
+.city-stats__routes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.city-stats__more {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.badge--city strong {
+  margin-left: 2px;
+}

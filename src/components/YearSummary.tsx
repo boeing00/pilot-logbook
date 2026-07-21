@@ -1,14 +1,19 @@
+import { useMemo } from 'react'
 import type { YearGroup } from '../types'
 import { TotalsRow } from './TotalsRow'
 import { CategoryBreakdown } from './CategoryBreakdown'
+import { CityStats } from './CityStats'
 
 interface Props {
   year: YearGroup
+  /** Home base airport (e.g. ICN), excluded from city-visit counts. */
+  base?: string | null
   onExportYear?: (year: string) => void
   onRemoveYear?: (year: string) => void
 }
 
-export function YearSummary({ year, onExportYear, onRemoveYear }: Props) {
+export function YearSummary({ year, base, onExportYear, onRemoveYear }: Props) {
+  const flights = useMemo(() => year.months.flatMap((m) => m.flights), [year])
   return (
     <section className="card year">
       <header className="year__head">
@@ -41,6 +46,7 @@ export function YearSummary({ year, onExportYear, onRemoveYear }: Props) {
       <div className="year__categories">
         <CategoryBreakdown byCategory={year.byCategory} />
       </div>
+      <CityStats flights={flights} base={base} />
     </section>
   )
 }

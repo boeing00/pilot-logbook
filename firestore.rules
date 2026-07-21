@@ -1,9 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Each user can only read and write their own logbook document.
+    // Each user can only read and write their own logbook documents,
+    // including the per-year flight shards.
     match /logbooks/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /years/{year} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
   }
 }

@@ -4,8 +4,10 @@ import type { FlightEntry, ParsedLogbook } from './types'
 import { extractText, isCsvFile, isHeicFile, isSupportedFile } from './lib/extractText'
 import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
-import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
+import { clearLogbook, loadLogbook, loadLogbookUpdatedAt, saveLogbook } from './lib/storage'
 import { csvToFlights, downloadCsv, flightsToCsv } from './lib/csv'
+import { inferHomeBase } from './lib/stats'
+import { flightId } from './lib/flightId'
 import { isCloudConfigured } from './lib/firebase'
 import {
   clearCloudLogbook,
@@ -22,31 +24,31 @@ import { CategorySummary } from './components/CategorySummary'
 import { YearSummary } from './components/YearSummary'
 import { MonthSection } from './components/MonthSection'
 
-/**
- * Identity for de-duplication when merging sources. Report times are excluded
- * because CSV exports no longer carry them, so an imported CSV row must match
- * the same sector parsed from a PDF/photo.
- */
-function flightId(f: FlightEntry): string {
-  return `${f.date}|${f.flightNo}|${f.from}|${f.to}`
-}
-
 function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedLogbook {
   if (!prev) return next
   const byId = new Map<string, FlightEntry>()
   for (const f of prev.flights) byId.set(flightId(f), f)
   for (const f of next.flights) {
     const existing = byId.get(flightId(f))
-    // Keep fields the newer source is missing (e.g. CSV imports have no report times).
+    // Existing data wins; the new source only fills gaps. A re-uploaded blurry
+    // photo must never overwrite good values from an earlier PDF with a worse
+    // OCR pass. To intentionally change values, edit and re-import the CSV
+    // (that path replaces data instead of merging).
     byId.set(
       flightId(f),
       existing
         ? {
-            ...f,
-            reportOut: f.reportOut || existing.reportOut,
-            reportIn: f.reportIn || existing.reportIn,
-            tail: f.tail || existing.tail,
-            irr: f.irr || existing.irr,
+            ...existing,
+            tail: existing.tail || f.tail,
+            irr: existing.irr || f.irr,
+            reportOut: existing.reportOut || f.reportOut,
+            reportIn: existing.reportIn || f.reportIn,
+            dutyMin: existing.dutyMin || f.dutyMin,
+            flightMin: existing.flightMin || f.flightMin,
+            nightMin: existing.nightMin || f.nightMin,
+            instrumentMin: existing.instrumentMin || f.instrumentMin,
+            takeoff: existing.takeoff || f.takeoff,
+            landing: existing.landing || f.landing,
           }
         : f,
     )
@@ -58,6 +60,35 @@ function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedL
     pilot: { ...prev.pilot, ...next.pilot },
     summary: { ...prev.summary, ...next.summary },
     flights,
+  }
+}
+
+/**
+ * Apply an edited/exported CSV back onto the logbook. The CSV is treated as
+ * authoritative for every year it contains: existing flights in those years
+ * are replaced by the CSV rows, so edits AND deletions made in the CSV
+ * propagate into the log. Years not present in the CSV are left untouched.
+ */
+function applyCsvImport(
+  prev: ParsedLogbook | null,
+  imported: FlightEntry[],
+): { book: ParsedLogbook; removed: number; kept: number } {
+  const years = new Set(imported.map((f) => f.date.slice(0, 4)))
+  const outside = (prev?.flights ?? []).filter((f) => !years.has(f.date.slice(0, 4)))
+  const inside = (prev?.flights ?? []).filter((f) => years.has(f.date.slice(0, 4)))
+
+  // De-duplicate rows inside the CSV itself (last occurrence wins).
+  const byId = new Map<string, FlightEntry>()
+  for (const f of imported) byId.set(flightId(f), f)
+
+  const removed = inside.filter((f) => !byId.has(flightId(f))).length
+  const flights = [...outside, ...byId.values()].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  )
+  return {
+    book: { pilot: prev?.pilot ?? {}, summary: prev?.summary ?? {}, flights },
+    removed,
+    kept: outside.length,
   }
 }
 
@@ -110,24 +141,49 @@ export default function App() {
   useEffect(() => {
     if (!user) return
     const uid = user.uid
-    // The first snapshot after sign-in merges cloud data with whatever is on
-    // this device (so nothing is lost), then pushes the union back up. Later
-    // snapshots come from other devices and replace local state, so deletions
-    // propagate instead of resurrecting.
+    // First snapshot after sign-in: compare the cloud's updatedAt with the
+    // local modification time. If the cloud is as new or newer, adopt it so
+    // deletions performed on other devices propagate instead of being
+    // resurrected by stale localStorage. Only when the local copy is strictly
+    // newer (offline edits) is it merged and pushed back up. Later snapshots
+    // come from other devices and replace local state.
     let firstSnapshot = true
-    return watchCloudLogbook(uid, (remote) => {
+    return watchCloudLogbook(uid, ({ data: remote, updatedAtMs, legacy }) => {
       const local = dataRef.current
       if (firstSnapshot) {
         firstSnapshot = false
-        const merged = remote ? mergeLogbooks(local, remote) : local
-        if (merged) {
+        if (!remote) {
+          if (local) {
+            void pushCloud(uid, local)
+          } else {
+            setSyncState('synced')
+          }
+          return
+        }
+        const localAt = loadLogbookUpdatedAt()
+        if (!local || updatedAtMs >= localAt) {
+          if (remote.flights.length > 0) {
+            setData(remote)
+            saveLogbook(remote)
+          } else {
+            setData(null)
+            clearLogbook()
+          }
+          // Rewrite legacy single-document cloud data in the sharded format.
+          if (legacy) {
+            void pushCloud(uid, remote.flights.length > 0 ? remote : null)
+          } else {
+            setSyncState('synced')
+          }
+        } else {
+          const merged = mergeLogbooks(local, remote)
           setData({ ...merged })
           saveLogbook(merged)
-        }
-        if (!sameBook(merged, remote)) {
-          void pushCloud(uid, merged)
-        } else {
-          setSyncState('synced')
+          if (legacy || !sameBook(merged, remote)) {
+            void pushCloud(uid, merged)
+          } else {
+            setSyncState('synced')
+          }
         }
         return
       }
@@ -170,6 +226,7 @@ export default function App() {
 
   const months = useMemo(() => groupByMonth(data?.flights ?? []), [data])
   const years = useMemo(() => groupByYear(months), [months])
+  const homeBase = useMemo(() => inferHomeBase(data?.flights ?? []), [data])
 
   async function handleFiles(files: File[]) {
     setError('')
@@ -191,20 +248,32 @@ export default function App() {
       let addedTotal = 0
       for (const file of supported) {
         setProgress(`Reading ${file.name}…`)
-        let parsed: ParsedLogbook
         if (isCsvFile(file)) {
+          // A CSV is an edited export: replace the years it covers so that
+          // edits and deletions made in the CSV are mirrored into the log.
           const flights = csvToFlights(await file.text())
-          parsed = { pilot: {}, summary: {}, flights }
+          if (flights.length === 0) continue
+          const { book, removed } = applyCsvImport(merged, flights)
+          if (removed > 0) {
+            const ok = window.confirm(
+              `${file.name}: this CSV is missing ${removed} flight(s) that currently exist ` +
+                `in the covered year(s). Import will remove them from the log ` +
+                `(edits in the CSV are applied either way). Continue?`,
+            )
+            if (!ok) continue
+          }
+          addedTotal += flights.length
+          merged = book
         } else {
           const text = await extractText(file, (message, ratio) => {
             setProgress(
               ratio != null ? `${file.name}: ${message} ${Math.round(ratio * 100)}%` : message,
             )
           })
-          parsed = parseLogbook(text)
+          const parsed = parseLogbook(text)
+          addedTotal += parsed.flights.length
+          merged = mergeLogbooks(merged, parsed)
         }
-        addedTotal += parsed.flights.length
-        merged = mergeLogbooks(merged, parsed)
       }
       if (merged && merged.flights.length > 0) {
         persist({ ...merged })
@@ -249,8 +318,11 @@ export default function App() {
 
   function handleRemoveYear(year: string) {
     if (!data) return
+    const cloudNote = user
+      ? `\nYou are signed in, so this also removes ${year} from the cloud and all your devices.`
+      : ''
     const confirmed = window.confirm(
-      `Remove all ${year} flights from the browser?\n` +
+      `Remove all ${year} flights from the browser?${cloudNote}\n` +
         `Export the ${year} CSV first if you want to keep an archive — you can re-import it anytime.`,
     )
     if (!confirmed) return
@@ -331,12 +403,13 @@ export default function App() {
               <div className="year-block" key={year.year}>
                 <YearSummary
                   year={year}
+                  base={homeBase}
                   onExportYear={handleExportYear}
                   onRemoveYear={handleRemoveYear}
                 />
                 <div className="month-list">
                   {year.months.map((m, idx) => (
-                    <MonthSection key={m.key} group={m} defaultOpen={idx === 0} />
+                    <MonthSection key={m.key} group={m} base={homeBase} defaultOpen={idx === 0} />
                   ))}
                 </div>
               </div>

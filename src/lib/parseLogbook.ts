@@ -1,6 +1,7 @@
 import type { FlightEntry, LogbookSummary, ParsedLogbook, PilotInfo } from '../types'
 import { parseDurationToMinutes } from './time'
 import { cleanupOcrText } from './ocrCleanup'
+import { flightId } from './flightId'
 
 const DATE_RE = /\d{4}\/\d{2}\/\d{2}/
 const ROUTE_RE = /^[A-Z]{3}-[A-Z]{3}$/
@@ -109,7 +110,21 @@ export function parseFlightLine(line: string): FlightEntry | null {
   const durationTimes = times.length > 4 ? times.slice(-4) : times
   const [dutyMin, flightMin, nightMin, instrumentMin] = durationTimes.map(parseDurationToMinutes)
 
-  const asterisks = (remainder.match(/\*/g) ?? []).length
+  // T/O and L/D marker columns follow the last duration. Empty marker cells
+  // sometimes OCR as '-', '.' or '\u00b7'; when such placeholders are present the
+  // column position disambiguates a lone '*' (e.g. "- *" = landing only).
+  // With no placeholder a lone '*' is ambiguous and is treated as T/O (first
+  // column) \u2014 use the CSV edit/re-import flow to correct individual sectors.
+  const lastTime = durationTimes[durationTimes.length - 1]
+  const markerText = remainder.slice(remainder.lastIndexOf(lastTime) + lastTime.length)
+  const markerTokens = markerText
+    .replace(/\*/g, ' * ')
+    .trim()
+    .split(/\s+/)
+    .filter((t) => /^[*\-.\u00b7]$/.test(t))
+    .slice(0, 2)
+  const takeoff = markerTokens[0] === '*'
+  const landing = markerTokens[1] === '*'
 
   return {
     date,
@@ -125,8 +140,8 @@ export function parseFlightLine(line: string): FlightEntry | null {
     flightMin,
     nightMin,
     instrumentMin,
-    takeoff: asterisks >= 1,
-    landing: asterisks >= 2,
+    takeoff,
+    landing,
   }
 }
 
@@ -163,7 +178,9 @@ function parseSummary(raw: string): LogbookSummary {
   const firstFlight = raw.search(
     /\d{4}\/\d{2}\/\d{2}\s+[A-Z0-9]+\s+\S+\s+\S+\s+[A-Z]{3}-[A-Z]{3}/,
   )
-  const head = firstFlight > 0 ? raw.slice(0, firstFlight) : raw
+  // firstFlight === 0 means the text starts directly with flight rows \u2014 there
+  // is no summary header, so head must be empty (not the whole document).
+  const head = firstFlight >= 0 ? raw.slice(0, firstFlight) : raw
 
   const durations = head.match(/\b\d+:\d{1,2}\b/g) ?? []
   const mins = durations.map(parseDurationToMinutes)
@@ -197,7 +214,7 @@ export function parseLogbook(raw: string): ParsedLogbook {
     const entry = parseFlightLine(line)
     if (!entry) continue
     // De-duplicate identical rows (can happen with overlapping OCR passes).
-    const id = `${entry.date}|${entry.flightNo}|${entry.from}|${entry.to}`
+    const id = flightId(entry)
     if (seen.has(id)) continue
     seen.add(id)
     flights.push(entry)

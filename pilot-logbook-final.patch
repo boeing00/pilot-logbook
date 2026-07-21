@@ -1,0 +1,1280 @@
+diff --git a/firebase.json b/firebase.json
+index 40e838d..1a7f018 100644
+--- a/firebase.json
++++ b/firebase.json
+@@ -4,7 +4,11 @@
+   },
+   "hosting": {
+     "public": "dist",
+-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
++    "ignore": [
++      "firebase.json",
++      "**/.*",
++      "**/node_modules/**"
++    ],
+     "rewrites": [
+       {
+         "source": "**",
+@@ -12,6 +16,15 @@
+       }
+     ],
+     "headers": [
++      {
++        "source": "/sw.js",
++        "headers": [
++          {
++            "key": "Cache-Control",
++            "value": "no-store"
++          }
++        ]
++      },
+       {
+         "source": "**",
+         "headers": [
+@@ -45,4 +58,4 @@
+     },
+     "singleProjectMode": true
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/firestore.rules b/firestore.rules
+index 0881fb8..06796ad 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -1,9 +1,14 @@
+ rules_version = '2';
+ service cloud.firestore {
+   match /databases/{database}/documents {
+-    // Each user can only read and write their own logbook document.
++    // Each user can only read and write their own logbook documents,
++    // including the per-year flight shards.
+     match /logbooks/{userId} {
+       allow read, write: if request.auth != null && request.auth.uid == userId;
++
++      match /years/{year} {
++        allow read, write: if request.auth != null && request.auth.uid == userId;
++      }
+     }
+   }
+ }
+diff --git a/index.html b/index.html
+index a8319df..5391d67 100644
+--- a/index.html
++++ b/index.html
+@@ -3,6 +3,11 @@
+   <head>
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
++    <link rel="manifest" href="/manifest.webmanifest" />
++    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
++    <meta name="theme-color" content="#0a1a2f" />
++    <meta name="mobile-web-app-capable" content="yes" />
++    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <meta
+       name="description"
+diff --git a/public/icons/icon-192.png b/public/icons/icon-192.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..c812dfec7e23a89abe0ccd637241d457d1a1c905
+GIT binary patch
+literal 1784
+zcmXYyeKcFy8pd}{6C*(|Qq|nHw1bA4#$2vqkhG<WTTQ}hMQJh^s?4IJYpU1B35~B-
+zuTGmLYFSh>of(73EZ;g!geu0M`XQaRB$gVTW{eaeh~%Er+ds}Zd%y3yfA4elTKm~$
+zjL1+c0+|2+unIdG%tF3B=woh%yjic(KLWr^9u|BsI=gy)@*XoT%%T6?mNwxb#<!QG
+z9k1QD+<ERyxy~RZNoDDS1$(e@O$r}!^55c(6^+Jdq#dtFc<4KKUR7{ilJuLXS(U$<
+zZ~dcYUbptsYL0og%(j<UpRv12?pZe=ocQw0N&?ogK2}h-Zef%A`X@I3ET>W}ZY76M
+zj5vJI*?nxjhQ&F$$8biRG<w;)Of43@dg8Q!buzqhI{>qBP6nyd-jWgvy8ery@qk_K
+zV7eqE^y^!3px1hswR9^Q^j6q@_u9J~@Et!X8%c}CnA47sZoHg?Z1T&~sqzq*1UZZ(
+zV`AXnxcdeg5M1R@Y)u!WXzPch#>#P)#1Er>5rXFb3Q$#p%=su}oSj*f6$v_5m|()O
+zhW|?z)blR_P)eL7H0>2TAYp>eBN#Oq$4gTNfIcsz^23z$A;%r<YyKg*S$DGKB=n6z
+zzxLfi$Ky>^$H?g$(CvGUv|8sdRmMxX501WV_wqq=cvvT*0P^S7vZpC)TL?T?VIeh-
+z2y4)&`zZ_A(+g<Sy}ghcUo0P3k01fud{K~8YQW&=?a$Q_!_y0G#*cCIVu3oMT}ZnP
+zjta@Ssey(-CFc$(J@33+&_8QU0Y0->`1k?}Js}{-X3@c@AkNUFJrx6&L2CGJv;Tw$
+zS^eK<-KvEm)vrjSp1W1n?P3p@j@ePaJ=bl&K{$aR_dg}dyr&jFB5@NwEu{9Bs9qqY
+zT>qv+j^*8mrpjQAIwEztqZ85OaJoVrk;O+A^}XGin`%fKb0c_OtEsbQ^<`Y#bRl?R
+zEfk_ZVvRh=A=yR$_-E}Y4x*(p$xZ*bdf1Tx4maXB{=1B}XxmA)WuE5}()PC9utK!h
+zOG6dj_R}atxu`<&_T73`zCJV-0Yo1N*Sc^J0FQ8lkjL0#5I4z#F_+1o>93C=TS3Q&
+z%{cDcjJD_ov5ydgrkK27ucE091nBhQ-w05(ah%E9*@EM^|HJq#TGfzjDSNP3D+Vda
+zR<h_IgSZ(1I*;sJ=V_@~@xWRk>Rd@b#|Bh|=q(=>>O|FBd!n>1LR#?^DBD67O*MEm
+z$-U2E0*ZsUYct1Af-$797;e{zT-|xA>Ie^$ZQnMYTHdhJxLwI1w*tP=OK9q>Bha<f
+zHgi*>hHAwEh4S**v6OCrh2tBvW4{=$k3%+wuRLJCWCH!oOsl2oFAa4&1t=;87DdV?
+zfTbPNXmeuV`b3OzbMBjWt8Ncngz}mODo4Kg_onMg_WqCxZ4MhA>hYpmHvfPd=BRA;
+z(l6f%SF9@!JiuQ|5I!l?Wh8dnITbx)EfeG&$X{*a9ve%rF}8ny54tHmfAuVrAPJm5
+z2RV0l<vbdm*&Jw&*eXuZ-<QZA;4=qDCNDYvIr~mFn5tM@?ZaQA@M*q*Rx2J`#TWE}
+z=mrw~s0D%(eD$<4s^G$nfgFq^M_#~w^(xTAKGABrqW~h=M`10d2R<h-hGOxJ{8}9x
+ziXoQXU#P7$JJDM~(>t^l2vRQD$Czlo=z+{E)|two9fI{P)9_5-v{xzQdk8~i@*bMk
+zeM;)VU+yS}l1lT4zNQ@hIFX<RMW;eB{<{S}4Bim4^(&Iolc}tpiCQIb@3blu<-KW~
+z2yZc-qkuRuz%@=TCCZO8{?o)ZWxqe@pM*F0Xljd5b6^av<(UTMc7l6Tjj%uB6%^iQ
+zp(m?#wEt%rovV&rrrPlMtO=9v`z-V4hSBx8I#4uw8h&Jt^Gwf}WSer|V`nB#)aa;}
+zP^>3!sV!x5xDI4qg)H|p25C6<rep4LGgw|4QW`J6AH>n++tI0rZ(aT1Q7&b3AbWXb
+zJ+~i^r~q*r6rgm<{&;cp!!#O54r<ljbEwtb0o73D?-ymL1tws8ah~G4afsKoJ%cg{
+zT-UUVQvnzXCRutjQ9`eLF;%)?&x-<HSNxG6YO!zj*|_u^O<1a0wxr`d3kB7#G;9<U
+zBdi)bTnjOwnDfq}5}Mgvtn~GnT`e+eI-Ywll6VDM34cKj6ga5wSVY=B3a@_|I__Ac
+z4(Hp4|IrxB^|NBcUM*;nJttwh&Q5t$#j`08tF4oDK;9CCO;6q2@w=|>=0E9gH>QVR
+Yul*W^|KaR-<VFKwA(6q7L)^mu0dnIv@Bjb+
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/icons/icon-512.png b/public/icons/icon-512.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9c02ed0087d0e7ae802fd8108642cefcbd497ac
+GIT binary patch
+literal 5187
+zcmaJ_d0bQ1@}C<b1V{;})C7@$idftbD%vXCD2up)t%_BIU<=mLR(!Z13irAJmDQzg
+zXu}h&SQV%gH$bAXXb~G|3vsJ})PjJL0D%i6xxcyC*Z28--sio)a?Y&ZnKL<O=6)5j
+zbpBgb4psp0)`B4a4*+<$<bl8(e|qA78vqz-wZMPw^7xalelI_8=I+<YwT^cddJu#Z
+zw(oKGq3zrG>rUp{_t5W0DJ{$w)BEjHZ*SIYUXe)lM?K5wb39PBb=1DT>mT_%4bI5E
+zX?&eRMzccjF_@kdDsZ*)0rk!Z$#&S~ktRw6KT%QE#B1M(7@oN_ciP+<h3JP7c_NQY
+z=UHlt`0QI2sdI&n&3;dAwVK_TV1A{0?iX@~=(00Y_s2SU3_!cBSw#1)r_&A4KAac9
+zIGa9Uh&Ef^k7mkNv)@*}$6siAo-C!Wx+lx7M?7TAv_WTWCw8YfB*B&MY<c(D-N?*a
+zX|pSenywPbL>B^;2P+QiEOM{b&6A&xsMMOpmaLf9nDdB~O{<jBb}Jv{^w<|yQFidh
+zq5c`pdTUx|A^)~|_F-@Eq*~$PxOS(rJ8s+?m}^#ab8&>_nFPYa1pY@hoco0@`&ML6
+z-?-edf;qQ;vUEI@*&EyG8uFyh!nrix#kO}6G>ep0r(b_`4^jsr38kIgwkcuYZ^(wm
+zi=Pg@?GC3CXF<(}XHHp<fCIiG;o8E(<<@qv%vT6vm)ozGh-iV72kG8B*l*319T83t
+zed79_UwKN#Oj+i0ayV2<;pVaL(^O_0MHATBTmy(r`|#c=$G17=^J6A85cIUbG1Y!N
+zrCtP2G9Es-KO~(L+SziJkQ<1`Ym>J9)&L-zdvqAxE`^^<KMS5_iNL`a_Wgz5Ibj)9
+z-d8syvet~VqIr3}`1c_c`h-`P3ITF+rxJ|=7WAfsj@K_a2p-QK8TIy9a+}>Dj0F$%
+z@iDzvkHf~;fQE$XZJV>oIgcqrpf))^dht64#hHvCK*{TMYAqdN#As0`?O|NLHNeDA
+z;~?H-K{HogmyF`JAHp>g;hZ(4^wlr`s{{!YP;jrME@=k=^lm=7?s*sHux7Gw_134T
+zKeESzLz3N)=hMd_u|ylKD$p84(9V3S8G?g!tKk44HK9b~AO)+`#+(1PHkGrcyz%UH
+z8RtHTgU`tiOoE*(+9-Wh{{QHlooqlTz9oM~pzw@vOp`P5m*>CLhuqCHSvtdS&0HLR
+zt8o#G|8FXjUv^he$BpCm_L9XEK<mp+mN{#Db+<mr)F55YPW&fEcSPGq8GczE^J*ix
+z)HwYYTYxiLMjLaUFr}u55x9vX4VSJP`q1GSU9I+NZ<1jx`$Pb6d&j#RBMTXO^`A3q
+z1`{|28l1O%#=y*}Y#btU`FxD2-q(rJu)aK?&-V(cn5k?yGCu4WV_F}^4x)JS`(B0u
+zHVKJ-C(9XWMnyX-#?y^T@aZl!3?hQfn(jg4`sU67aw$N~5_QwY2QMgB6xmRoQc<Ge
+z81n&QAKI%LPTZ&X$e0?MVR~>xx6P<<19<pH8>c}Y1ZX^Or)qfIi;O-O0H!8?h_MG5
+zrw$<FCdU{DAok_(Z|8$7vN*Y-#E2d`7h#&;jbqlt_0M<4^dI*zTpBZ)(ohr+a%lm2
+z)@AtvOrBh&z53@P(t&`YV?lXT+-A&)#tw@!brzSbJWSS40b@+XVXOw13!=nH8Y+wj
+z&c}u5|2q1Q2nHCR9o4fj%%rmfT6y^`DyHRbgPu$V5KL@F>s@Me#6P%&S<~)iDquGu
+zOgNrWG2<u|$OHMojy&qu81(uvYTsHZG1Z5ej^lFfN(WQ@KxRcdHHU!M@9UCLfwkg;
+zGGL`6GP00iLqJXKcX?EES40Zdid^5c@zn{0q{fsi&G+E&hmHrZ$@er|T00Y6Uq^MD
+zuZJvE;nEz9mc(#a6#((M&s!U=88mnRua`TS>I<ZpEFljXgX>ZhtN9S}O%r=t&pE2{
+zG;~T>j<mm)Jw^^(m=EA8Hr)+OuV^Qo2$=jpOSW_s;sGr3G!$kypq<4$Shc^Yq4Gr*
+zz%O0{gXxY)#54xo*LJpawFCmZ6q`N{#GpuT0?tG-S#kYwnAj$XDK45b>r24iC`KLE
+z-<^u}I(@)c&6%~qSMZj$??qROJpqfOn8BR)Fv>Z6@YvT>k$hiq30H@kDt_+3q_m6$
+z`o6^2{=kXqvcqZ>vSPc+2E76i-S9HlVg_zZH#A>2y|)nHoW%6r*mQEcB{bURk)ek<
+zbyuL*3fY~@Diu%pQ1n$(mdh{rhl?8l$`6yt%%JArBpxu?O<Aswk=%{s*~z3+v)Y~y
+z@*cA^Z_`CTtj=WeN-7p7W|7`4q;}ffRg?%|;vH>^?G~(n7&{1|o7Cglm|{$0n&&{j
+zKle{e;KSrfZOh2*hK~*b9UwN9o#sw|2@ei>8LkINsd`s%en+K<NJgBPcG=iKYK){(
+zQDO-}N^PO*eFUVL0L~sNQCI-TWXaUp0_wCa*rql`tU01PXHLK&iP6Cm|Hu{GT5NjX
+zGlSeB0CBZebMOlU#;xyYHHW@1oDTryk3wpR1gj<@4d^tn>4s+}sTV-&z1Blq5ZqF!
+z{dM&--MI+_xQUa#^hC53xV8`{J*%2y`pp&O7Akdl2POj1Dy;(*^V3Nz`FN$advUMM
+zf`Dy8vhbpZses~x;U{hJk5<j1OP1ha`20#0#<F1vgdDD2U$~-D`XwLEijy)|Z9vCQ
+z1+dV=0G*a_B$|2ezFz$upDVzgqF)%5525@(NS0spMw_oKxf1NT@|aQ0=feg`QbEyk
+zwA!Bv&SO;S6)PR7cz?)FZfaS00snmplxaelD{YL*i$`at`{rGogI2z=gT3n*$%YrY
+zlu$mnh?4@>BqE5iv2d(P>!oUI7OfG$w;qP-4<eELxeJIZTfNro)1_cd9`!Q#heUB?
+zSGbnm<hI|vS+qmIm7)I!TqGSX&|0Y-vE-~SrJN7v#EGZB<AC=L2gh~HSJjLvhKIFC
+zDjoQcBTl*;YgBpj=yO8y`0~-zEI-h?sDi!i@qpA49$g_$y!_oPQ|u8?Y7ech!wQKz
+z0u!sXht}5VQk?j*xycIq<yd8;kAR*hBroL8G1a8Os*|<rXVjsI;AuShG89=MrCJwo
+zWmxQv$98TSQ6x~QtJ29HH?9aT{>-pP+ZE6FvU!0D_jEFBK8#<-oWH|RO#>}fJZC}`
+zJfl)t;08P|!}3oI4ROXed%`xm=^O^$ETCmV@@olOc-?gUARMc1-J?s9@Rj3}rSX+|
+zbsb+RPnJH5GpZbUa$A)s!pkI$GkWcYYsZ>WvLw{8MG&TJRmD}Z(=}wCfX)<>Wzhzy
+zmnnTbyzgNs%Fw0E@=YB4T|`xzTvoaY8?Bq!lkJMyG6-vpVEdXw+2a#)$2N;}@q}QW
+zxX8VkJ<+a^lmTB?8#6cNHvKf6yz^q1v&%A>c_lSkLl(yqLHA;aS_ze^ww4jM=>zHP
+z)&eTJix)yu8On*3(k?AeIr}!9m(Kbky&E^-*0XLie!k%_Yq7ZIgpRze59Z^hx*|}?
+z_=Sgqc;3j1cNuB(fSc7c5H^*_r=XQ?o-F9Lvo{f&-mVBL1KWdChV4;Z%8Yoz*(cH?
+zQ%C-+4}Lcsg47M8(jyI#Q^H|lz(~iB4eCwC5eG)WLfz^j1&VJcXt(cDcIim9K6rUJ
+zG=5dZI^1GZkNMD{H3lmd?aYuH24jsQjstz_Ci^lj=28i3=x*7@_PZAjtCW7Goe4#%
+zFAN)BkCR`>k3?BCe+p$^kIOA-c8T2>Ef%v$>7<0Qg7+EIIrZAH@_LP+Qrf2D!R*8y
+zo_1xSh7L{Gw@cS~UmyH-IOG<G7ZQa%%#ctQ4=l<OhFz2B9kf;Rm!bJM<Dsuc!L^z^
+z%5&CZW6Z4<iuHWa0?(P~UJ=-To;Y26i-}O_gS~lR-jDu%^}{xHCJ$_8b)O+8@zU8X
+zVeBX4LB6}Tkf@Yia|8M5M-i5>-?S?(@?r5-eGGQOOe)ZO64+mFP8zFZA`n(I4|p&8
+z9pr{x>-oUn?9ESS^=QTooQuZUA$1B;ueQukGFeRn>xc1RskpyF$GY><$s)YT{hi9q
+z#q6dq_ToH{&D%H*0nKM93*mzP2s=l$UcImklnchOHjq0CyNq4!iaG%Vb&#y#kq40?
+z0D6@F+mnVv&8?0KGmj8uI6k?Sn|{R0Yy1|rO`bo{ef+ZLo9=Q|YFdd@;d)^N)cn*z
+z^7#+_K)Eigprv1UUWT5-N7KdlRNNc3<D@#%oe!J;@U*yW3q=!;b|m?Fx!XZ@dZ>9W
+zUa!`1wO_UrpT?f&R6uFXTcfph1RQodm>&c(!rTUP=6vAOh-nvPj?2CV+S=doGe3(m
+zeEu%`+kI_`uT>*~`97G+l+24>m)gdMksmX3Js-j<e{?!3;1S>|k;wqgrb?M<1XzaY
+zw(NG<i}e<EuYtHTHlfj)fPE7Gd~6R~Q^&*ygDf_b$_R-RPcmc{9mN+VikS^&miUaw
+zH#|4@od9(GiGS|>3{T)lQ~REK{%_4eQiXVNJ_Zj{`*nAObKHR5CUpDF8R!?O;`k*X
+z3-PM(_Q);5reO~=o1T8h`txx>izFYc%E9j0Wwm@Z0YpIm4Q1}_8+;IsjCvS4ex+PW
+zz?`U6k@&0z1)ovkYaaiT@^%99d)qp}a7yX>oS%t}!-V9w>#>!1a5_NtgTlfSTSc4(
+zXqo3uR{EkXvnx)vk_Qv+dGshT<f11X?K^te#8tbvd4UhH_byI)suv{+;MgA~G`dz9
+zQz;!lqmky4uHhiFT4y#e9F*@QOa3t&JZfL<pc+`x%`=xI;AC{J3nJV*VQQlTI#~0f
+zzahkLD)v8%mMgdLp(f*2GWI<+D+&d+BVwn#sh8Z+Vohl~ckd1jC}GcA?K=ljreoud
+z0|<S;qx{dctViZw(9T~9EpL}rVw1~FH&grCZfrBE;@=ETO53c0of@(ldvI>j5ynxk
+zN==d2qj1xfJpV}@n!WB@QvdjBgHe08L&^v7UF-if=7iMDyj0RVxUnMXgb};>kB7cB
+zl>KY+`U?ZS+hhflK=7X<Si&eU*#Ok*x3>Jpc-ILa_vssa{jZs;CWUB>0a$f+e(Aqy
+zI3CUb_@nPr_22pl4sg>P=(2BKUHfa?Q|=Bge_kPk2s2P741vqxDJP-Y_fc1e)N;(Y
+z?VYPz3Wv5h+H%{H_2=Gf-*Ah!DTcNwZ@8O2Ir?Th#Ql3-J~zazj*CtSt^jOt#ho3d
+z0sQ1+)ixZ$36P(3Ds9JzhQHjhd7Cv90%XtEi~=k^ZeqWQqZ&U!`UppQ4#2jbtZBSf
+zk_sNy-M`7R#p&VMiXCkm0i5$EWxZVVMrd>YkdU$9nc5|SK#vc<yz`~a;AqZfVaDS{
+z6kh;y)8`yXF{eWTQX`om@xqK}ci$NjXVz6tUHV46yEnE?O6&)4&%tjPtUWr<J^g5K
+zrVp&nVO>BOWVdyiKm71^vkK@70gp;Oh?><WMZ=)Lc0<d&VX~O-eI23I_3_Pp)^z>z
+z#2|<bytCH2&#YYkY8z>oKDZv}ys<Xyl84fcDJ~%MK5)09BsYS1nr3q0Dc4B0P6~h@
+zjx?+I^yD31KTp|tUqgWZ;V5R~2gag}mIR!>=WV*=I$+fpUMU()>p%HD?=ac325;G8
+zF74WeGp447;rJouV4`8onu)M_1OZ_&I6Qpx=cw(A1W@y2VROUd(?rb)j47)wnT`G_
+zq76|fmtDxDVutY=0|ii2SEZtg4b$R-1)vQ=-FLdvo{iwa)8!7PoPShkeOw?U^hYEQ
+zrZpgW3l3K~T~Z~Ii>9jBeWK?CuFUh;>C!6mb>J*ju_s0AEnL7hr?%l|i!Iq=NWIl6
+zZT4&Tw}teNd(_=TxJ(E=QQE=oT{g}F=$+1Jx{2WNLP$4GW<`fK*$PD=Uw(@p2Vp_L
+LQvZT^^4<Rj;|kKj
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/icons/icon-maskable-512.png b/public/icons/icon-maskable-512.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8f2eee9a2e411d20e19d67ea3243184ead34628
+GIT binary patch
+literal 4320
+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
+zw|~I(cipIC4^5g--d)_C&l7!0%0D)8Gn%DQxVTo`T(s;{UY>*{r-j1kQG-o-`^HYk
+zX-{0dTCIPsma5IeWuTD78>vWSDc}j(>)f-h+YNIX!KNbHCw1z|teRHmqM0ZqSyCJd
+zK7qnX*X`mCM<zc7W|>m`<%}XF1+qREbM}T^-08?1gNv&huB=u|P3GYcGipfsXt+_&
+zdhPNA)xYZ8jaVonQlRoEnT7NgM`pNl(dBtw!6-sfV5i@((lFM7^yQv#B0r?XY&TRj
+zf`0Vx3OQrW8<0#11zYT^RDTh*3cJJj=t752cUVz(ouSwKBOhM$blkPzgrOUFb@woJ
+zxoN}p?qcEPK@j=K$UTcDzW1IXR8vvdJAy!dx?eEqX};i*)oX}RhpkSCopo%Xy{BOj
+zzsDiEVvq3+1?}BxPn!Cs*W0$Jh9ud|4eX)MJmIUe_c!Q+XRzK#gptkBpIJ#CUQx%Z
+zo3oqfOvNl7%IDF;FTD-gQS(^mQONejS7-)_Zs@jhuvc!~Gk3U=^RA^b{NY%+t0sDj
+zE3eZPkN&K7(>`ULfMlC<2PFPH7=K<lf@Jkk2=%fH=-0`dX%WaWSL%k;v)kwM!RMp?
+zrTw)#p_2+}mP$qgxwop0XB6khfu8<ZMR)6tS~U-_X||N3OuYvILw>N#(A$5&)D0#e
+zA*-*=PK`x|mKe~-wr)dRFYDQ)&#>hVNC>qw=Tk0HUb&y!E#Fp4t#~pR60-ZEfX0zZ
+zKLj`YL7s+D-lrf&x&wsnoVsEn-r}uogUCdE3IXjdx!1qp!{UFl_pT(~vutT<!l?_V
+zeXX14hA3sl*#wXUT+#^y+G3!u*C(4_M^4<1nhQRGpOI*S=ZjqBmXmIfSbo!|5>1-d
+zu=efiNdH|x|CGNDvfV&SdcOR-a^*>PNPLjx`A@|lUw4qrDUbEz0Z-_YvlLy5>(5sV
+zezNl;0;Z8q630cfYw-S$A5*><WNtf#V!$h}?Gy)_77NSK7?EKp_UHEL)86Fnn&1X*
+zKLJ5tF)G_#2?)%&e#1rO_MHpV@9pBL=k@5@@cxtR+>1A?`?Zmc0U*y=NvZdeY8S2)
+z+a0~<mMsbfxfI}~8=gC;%mt3^Pn+~!3DDbb*}AX%7(1d7FIy_Ca&HXC22JaGb4@rW
+z2<Z2PL2KPWzbRJO7zpyjDCtb{m=<sL61%T#+>^oIyMsPPHRgUG(Cc=3v?O4b<NE6L
+z$FBYpueR_eZQX*idK`W8o3vM}aQcWUCvfC#4;VDu>JGPC&UEqYNA=N9_@yW&P~~yo
+z59nKQd+0k#-^yJ8v<%B*y1~L#CqJ%ce8^xdIuqHWe~2#prOSHpEf;-O_TOik&o9<t
+zTLxlqXp3mzeCe*ijTy{wUmo~m>{VdmD~noav?yn{LN(h3o<D!npfhut(O!u-z9vX+
+zlVTnSmn7?F;Enx#(`(&vRRhjJt4<KuaOrH}OcTyOAK%*zVZ7#dPs4j(Txwmz<=`=J
+zz8G_MRj+KciXY-E>3la<JlJ;YB71!NJLK0jD=#7P9cRV1&5sfJj`Q}lZ7VNZ#g2EJ
+zw;rYT*HX`M=5szq!#7`atl@4qzu%^OJJ5BB!ig*-^v|d1|IW+&Ik)_a5j(suWM9TV
+P7qD<%LTv2^@}mC$9`#$v
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/manifest.webmanifest b/public/manifest.webmanifest
+new file mode 100644
+index 0000000..14a18d5
+--- /dev/null
++++ b/public/manifest.webmanifest
+@@ -0,0 +1,15 @@
++{
++  "name": "Pilot Logbook",
++  "short_name": "Logbook",
++  "description": "Track flight hours, landings, and routes.",
++  "start_url": "/",
++  "scope": "/",
++  "display": "standalone",
++  "background_color": "#0a1a2f",
++  "theme_color": "#0a1a2f",
++  "icons": [
++    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
++    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
++    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
++  ]
++}
+diff --git a/public/sw.js b/public/sw.js
+new file mode 100644
+index 0000000..58abb0d
+--- /dev/null
++++ b/public/sw.js
+@@ -0,0 +1,84 @@
++/*
++ * Offline support for Pilot Logbook.
++ *
++ * Strategy:
++ *  - Navigations: network-first (always get the freshest index.html when
++ *    online), falling back to the cached shell when offline.
++ *  - Same-origin assets + Google Fonts: cache-first (Vite asset filenames are
++ *    content-hashed, so cached copies never go stale).
++ *  - Everything else (Firebase Auth/Firestore, Tesseract CDN) is never
++ *    intercepted — those need the network and manage their own state.
++ *
++ * Flight data itself lives in localStorage, so once the shell is cached the
++ * whole logbook (tables, stats, CSV export) works fully offline. Uploading
++ * new PDFs/photos and cloud sync still require a connection.
++ */
++const VERSION = 'v1'
++const APP_CACHE = `pilot-logbook-${VERSION}`
++const PRECACHE = [
++  '/',
++  '/manifest.webmanifest',
++  '/favicon.svg',
++  '/icons/icon-192.png',
++  '/icons/icon-512.png',
++  '/icons/icon-maskable-512.png',
++]
++
++self.addEventListener('install', (event) => {
++  event.waitUntil(
++    caches
++      .open(APP_CACHE)
++      .then((cache) => cache.addAll(PRECACHE))
++      .then(() => self.skipWaiting()),
++  )
++})
++
++self.addEventListener('activate', (event) => {
++  event.waitUntil(
++    caches
++      .keys()
++      .then((keys) =>
++        Promise.all(keys.filter((k) => k !== APP_CACHE).map((k) => caches.delete(k))),
++      )
++      .then(() => self.clients.claim()),
++  )
++})
++
++async function handleNavigate(request) {
++  try {
++    const response = await fetch(request)
++    const cache = await caches.open(APP_CACHE)
++    cache.put('/', response.clone())
++    return response
++  } catch {
++    const cached = await caches.match('/')
++    return cached ?? Response.error()
++  }
++}
++
++async function cacheFirst(request) {
++  const cached = await caches.match(request)
++  if (cached) return cached
++  const response = await fetch(request)
++  if (response.ok || response.type === 'opaque') {
++    const cache = await caches.open(APP_CACHE)
++    cache.put(request, response.clone())
++  }
++  return response
++}
++
++self.addEventListener('fetch', (event) => {
++  const { request } = event
++  if (request.method !== 'GET') return
++
++  const url = new URL(request.url)
++  const isFonts =
++    url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com'
++  if (url.origin !== self.location.origin && !isFonts) return
++
++  if (request.mode === 'navigate') {
++    event.respondWith(handleNavigate(request))
++    return
++  }
++  event.respondWith(cacheFirst(request))
++})
+diff --git a/src/App.css b/src/App.css
+index 375098e..b96fcf6 100644
+--- a/src/App.css
++++ b/src/App.css
+@@ -667,3 +667,54 @@
+   font-size: 12px;
+   padding-top: 16px;
+ }
++
++/* City visit statistics */
++.city-stats {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  padding-top: 10px;
++  border-top: 1px solid rgba(255, 255, 255, 0.06);
++  margin-top: 10px;
++}
++
++.city-stats--compact {
++  flex-direction: row;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 6px;
++  border-top: none;
++  margin-top: 4px;
++  padding-top: 0;
++}
++
++.city-stats__head {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 8px;
++}
++
++.city-stats__label {
++  font-size: 12px;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  color: var(--text-dim);
++}
++
++.city-stats__chips,
++.city-stats__routes {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 6px;
++}
++
++.city-stats__more {
++  font-size: 12px;
++  color: var(--text-dim);
++}
++
++.badge--city strong {
++  margin-left: 2px;
++}
+diff --git a/src/App.tsx b/src/App.tsx
+index 068a2f2..8bad042 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -4,8 +4,10 @@ import type { FlightEntry, ParsedLogbook } from './types'
+ import { extractText, isCsvFile, isHeicFile, isSupportedFile } from './lib/extractText'
+ import { parseLogbook } from './lib/parseLogbook'
+ import { groupByMonth, groupByYear } from './lib/aggregate'
+-import { clearLogbook, loadLogbook, saveLogbook } from './lib/storage'
++import { clearLogbook, loadLogbook, loadLogbookUpdatedAt, saveLogbook } from './lib/storage'
+ import { csvToFlights, downloadCsv, flightsToCsv } from './lib/csv'
++import { inferHomeBase } from './lib/stats'
++import { flightId } from './lib/flightId'
+ import { isCloudConfigured } from './lib/firebase'
+ import {
+   clearCloudLogbook,
+@@ -22,31 +24,31 @@ import { CategorySummary } from './components/CategorySummary'
+ import { YearSummary } from './components/YearSummary'
+ import { MonthSection } from './components/MonthSection'
+ 
+-/**
+- * Identity for de-duplication when merging sources. Report times are excluded
+- * because CSV exports no longer carry them, so an imported CSV row must match
+- * the same sector parsed from a PDF/photo.
+- */
+-function flightId(f: FlightEntry): string {
+-  return `${f.date}|${f.flightNo}|${f.from}|${f.to}`
+-}
+-
+ function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedLogbook {
+   if (!prev) return next
+   const byId = new Map<string, FlightEntry>()
+   for (const f of prev.flights) byId.set(flightId(f), f)
+   for (const f of next.flights) {
+     const existing = byId.get(flightId(f))
+-    // Keep fields the newer source is missing (e.g. CSV imports have no report times).
++    // Existing data wins; the new source only fills gaps. A re-uploaded blurry
++    // photo must never overwrite good values from an earlier PDF with a worse
++    // OCR pass. To intentionally change values, edit and re-import the CSV
++    // (that path replaces data instead of merging).
+     byId.set(
+       flightId(f),
+       existing
+         ? {
+-            ...f,
+-            reportOut: f.reportOut || existing.reportOut,
+-            reportIn: f.reportIn || existing.reportIn,
+-            tail: f.tail || existing.tail,
+-            irr: f.irr || existing.irr,
++            ...existing,
++            tail: existing.tail || f.tail,
++            irr: existing.irr || f.irr,
++            reportOut: existing.reportOut || f.reportOut,
++            reportIn: existing.reportIn || f.reportIn,
++            dutyMin: existing.dutyMin || f.dutyMin,
++            flightMin: existing.flightMin || f.flightMin,
++            nightMin: existing.nightMin || f.nightMin,
++            instrumentMin: existing.instrumentMin || f.instrumentMin,
++            takeoff: existing.takeoff || f.takeoff,
++            landing: existing.landing || f.landing,
+           }
+         : f,
+     )
+@@ -61,6 +63,35 @@ function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedL
+   }
+ }
+ 
++/**
++ * Apply an edited/exported CSV back onto the logbook. The CSV is treated as
++ * authoritative for every year it contains: existing flights in those years
++ * are replaced by the CSV rows, so edits AND deletions made in the CSV
++ * propagate into the log. Years not present in the CSV are left untouched.
++ */
++function applyCsvImport(
++  prev: ParsedLogbook | null,
++  imported: FlightEntry[],
++): { book: ParsedLogbook; removed: number; kept: number } {
++  const years = new Set(imported.map((f) => f.date.slice(0, 4)))
++  const outside = (prev?.flights ?? []).filter((f) => !years.has(f.date.slice(0, 4)))
++  const inside = (prev?.flights ?? []).filter((f) => years.has(f.date.slice(0, 4)))
++
++  // De-duplicate rows inside the CSV itself (last occurrence wins).
++  const byId = new Map<string, FlightEntry>()
++  for (const f of imported) byId.set(flightId(f), f)
++
++  const removed = inside.filter((f) => !byId.has(flightId(f))).length
++  const flights = [...outside, ...byId.values()].sort((a, b) =>
++    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
++  )
++  return {
++    book: { pilot: prev?.pilot ?? {}, summary: prev?.summary ?? {}, flights },
++    removed,
++    kept: outside.length,
++  }
++}
++
+ type SyncState = 'idle' | 'saving' | 'synced' | 'error'
+ 
+ const EMPTY_BOOK: ParsedLogbook = { pilot: {}, summary: {}, flights: [] }
+@@ -110,24 +141,49 @@ export default function App() {
+   useEffect(() => {
+     if (!user) return
+     const uid = user.uid
+-    // The first snapshot after sign-in merges cloud data with whatever is on
+-    // this device (so nothing is lost), then pushes the union back up. Later
+-    // snapshots come from other devices and replace local state, so deletions
+-    // propagate instead of resurrecting.
++    // First snapshot after sign-in: compare the cloud's updatedAt with the
++    // local modification time. If the cloud is as new or newer, adopt it so
++    // deletions performed on other devices propagate instead of being
++    // resurrected by stale localStorage. Only when the local copy is strictly
++    // newer (offline edits) is it merged and pushed back up. Later snapshots
++    // come from other devices and replace local state.
+     let firstSnapshot = true
+-    return watchCloudLogbook(uid, (remote) => {
++    return watchCloudLogbook(uid, ({ data: remote, updatedAtMs, legacy }) => {
+       const local = dataRef.current
+       if (firstSnapshot) {
+         firstSnapshot = false
+-        const merged = remote ? mergeLogbooks(local, remote) : local
+-        if (merged) {
+-          setData({ ...merged })
+-          saveLogbook(merged)
++        if (!remote) {
++          if (local) {
++            void pushCloud(uid, local)
++          } else {
++            setSyncState('synced')
++          }
++          return
+         }
+-        if (!sameBook(merged, remote)) {
+-          void pushCloud(uid, merged)
++        const localAt = loadLogbookUpdatedAt()
++        if (!local || updatedAtMs >= localAt) {
++          if (remote.flights.length > 0) {
++            setData(remote)
++            saveLogbook(remote)
++          } else {
++            setData(null)
++            clearLogbook()
++          }
++          // Rewrite legacy single-document cloud data in the sharded format.
++          if (legacy) {
++            void pushCloud(uid, remote.flights.length > 0 ? remote : null)
++          } else {
++            setSyncState('synced')
++          }
+         } else {
+-          setSyncState('synced')
++          const merged = mergeLogbooks(local, remote)
++          setData({ ...merged })
++          saveLogbook(merged)
++          if (legacy || !sameBook(merged, remote)) {
++            void pushCloud(uid, merged)
++          } else {
++            setSyncState('synced')
++          }
+         }
+         return
+       }
+@@ -170,6 +226,7 @@ export default function App() {
+ 
+   const months = useMemo(() => groupByMonth(data?.flights ?? []), [data])
+   const years = useMemo(() => groupByYear(months), [months])
++  const homeBase = useMemo(() => inferHomeBase(data?.flights ?? []), [data])
+ 
+   async function handleFiles(files: File[]) {
+     setError('')
+@@ -191,20 +248,32 @@ export default function App() {
+       let addedTotal = 0
+       for (const file of supported) {
+         setProgress(`Reading ${file.name}…`)
+-        let parsed: ParsedLogbook
+         if (isCsvFile(file)) {
++          // A CSV is an edited export: replace the years it covers so that
++          // edits and deletions made in the CSV are mirrored into the log.
+           const flights = csvToFlights(await file.text())
+-          parsed = { pilot: {}, summary: {}, flights }
++          if (flights.length === 0) continue
++          const { book, removed } = applyCsvImport(merged, flights)
++          if (removed > 0) {
++            const ok = window.confirm(
++              `${file.name}: this CSV is missing ${removed} flight(s) that currently exist ` +
++                `in the covered year(s). Import will remove them from the log ` +
++                `(edits in the CSV are applied either way). Continue?`,
++            )
++            if (!ok) continue
++          }
++          addedTotal += flights.length
++          merged = book
+         } else {
+           const text = await extractText(file, (message, ratio) => {
+             setProgress(
+               ratio != null ? `${file.name}: ${message} ${Math.round(ratio * 100)}%` : message,
+             )
+           })
+-          parsed = parseLogbook(text)
++          const parsed = parseLogbook(text)
++          addedTotal += parsed.flights.length
++          merged = mergeLogbooks(merged, parsed)
+         }
+-        addedTotal += parsed.flights.length
+-        merged = mergeLogbooks(merged, parsed)
+       }
+       if (merged && merged.flights.length > 0) {
+         persist({ ...merged })
+@@ -249,8 +318,11 @@ export default function App() {
+ 
+   function handleRemoveYear(year: string) {
+     if (!data) return
++    const cloudNote = user
++      ? `\nYou are signed in, so this also removes ${year} from the cloud and all your devices.`
++      : ''
+     const confirmed = window.confirm(
+-      `Remove all ${year} flights from the browser?\n` +
++      `Remove all ${year} flights from the browser?${cloudNote}\n` +
+         `Export the ${year} CSV first if you want to keep an archive — you can re-import it anytime.`,
+     )
+     if (!confirmed) return
+@@ -331,12 +403,13 @@ export default function App() {
+               <div className="year-block" key={year.year}>
+                 <YearSummary
+                   year={year}
++                  base={homeBase}
+                   onExportYear={handleExportYear}
+                   onRemoveYear={handleRemoveYear}
+                 />
+                 <div className="month-list">
+                   {year.months.map((m, idx) => (
+-                    <MonthSection key={m.key} group={m} defaultOpen={idx === 0} />
++                    <MonthSection key={m.key} group={m} base={homeBase} defaultOpen={idx === 0} />
+                   ))}
+                 </div>
+               </div>
+diff --git a/src/components/CityStats.tsx b/src/components/CityStats.tsx
+new file mode 100644
+index 0000000..2bc6a78
+--- /dev/null
++++ b/src/components/CityStats.tsx
+@@ -0,0 +1,84 @@
++import { useMemo, useState } from 'react'
++import type { FlightEntry } from '../types'
++import { cityVisitCounts, routeCounts } from '../lib/stats'
++
++interface Props {
++  flights: FlightEntry[]
++  /** Home base airport to exclude from "cities visited" (e.g. ICN). */
++  base?: string | null
++  /** Compact chip row (used inside a month section). */
++  compact?: boolean
++}
++
++const COMPACT_LIMIT = 8
++const PANEL_LIMIT = 14
++
++/**
++ * "Cities visited" statistics. A visit is counted per arrival airport,
++ * excluding the inferred home base so returns home are not "visits".
++ */
++export function CityStats({ flights, base, compact = false }: Props) {
++  const [showAll, setShowAll] = useState(false)
++
++  const cities = useMemo(() => cityVisitCounts(flights, base), [flights, base])
++  const routes = useMemo(() => (compact ? [] : routeCounts(flights)), [flights, compact])
++
++  if (cities.length === 0) return null
++
++  if (compact) {
++    const shown = cities.slice(0, COMPACT_LIMIT)
++    const rest = cities.length - shown.length
++    return (
++      <div className="city-stats city-stats--compact">
++        <span className="city-stats__label">Cities</span>
++        {shown.map((c) => (
++          <span className="badge badge--city" key={c.city}>
++            {c.city} <strong>×{c.count}</strong>
++          </span>
++        ))}
++        {rest > 0 && <span className="city-stats__more">+{rest} more</span>}
++      </div>
++    )
++  }
++
++  const shown = showAll ? cities : cities.slice(0, PANEL_LIMIT)
++  const hidden = cities.length - shown.length
++
++  return (
++    <div className="city-stats">
++      <div className="city-stats__head">
++        <span className="city-stats__label">
++          Cities visited{base ? ` (excl. base ${base})` : ''} · {cities.length} cities
++        </span>
++        {hidden > 0 && !showAll && (
++          <button type="button" className="btn btn--ghost btn--small" onClick={() => setShowAll(true)}>
++            Show all
++          </button>
++        )}
++        {showAll && cities.length > PANEL_LIMIT && (
++          <button type="button" className="btn btn--ghost btn--small" onClick={() => setShowAll(false)}>
++            Show top {PANEL_LIMIT}
++          </button>
++        )}
++      </div>
++      <div className="city-stats__chips">
++        {shown.map((c) => (
++          <span className="badge badge--city" key={c.city}>
++            {c.city} <strong>×{c.count}</strong>
++          </span>
++        ))}
++        {hidden > 0 && !showAll && <span className="city-stats__more">+{hidden} more</span>}
++      </div>
++      {routes.length > 0 && (
++        <div className="city-stats__routes">
++          <span className="city-stats__label">Top routes</span>
++          {routes.slice(0, 6).map((r) => (
++            <span className="badge" key={r.route}>
++              {r.route} <strong>×{r.count}</strong>
++            </span>
++          ))}
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/src/components/MonthSection.tsx b/src/components/MonthSection.tsx
+index fe4f253..85015d9 100644
+--- a/src/components/MonthSection.tsx
++++ b/src/components/MonthSection.tsx
+@@ -4,13 +4,16 @@ import { monthLabel } from '../lib/aggregate'
+ import { FlightTable } from './FlightTable'
+ import { TotalsRow } from './TotalsRow'
+ import { CategoryBreakdown } from './CategoryBreakdown'
++import { CityStats } from './CityStats'
+ 
+ interface Props {
+   group: MonthGroup
++  /** Home base airport (e.g. ICN), excluded from city-visit counts. */
++  base?: string | null
+   defaultOpen?: boolean
+ }
+ 
+-export function MonthSection({ group, defaultOpen = false }: Props) {
++export function MonthSection({ group, base, defaultOpen = false }: Props) {
+   const [open, setOpen] = useState(defaultOpen)
+ 
+   return (
+@@ -34,6 +37,7 @@ export function MonthSection({ group, defaultOpen = false }: Props) {
+       <div className="month__categories">
+         <CategoryBreakdown byCategory={group.byCategory} />
+       </div>
++      <CityStats flights={group.flights} base={base} compact />
+ 
+       {open && <FlightTable flights={group.flights} />}
+     </section>
+diff --git a/src/components/YearSummary.tsx b/src/components/YearSummary.tsx
+index 2538f5c..97cb355 100644
+--- a/src/components/YearSummary.tsx
++++ b/src/components/YearSummary.tsx
+@@ -1,14 +1,19 @@
++import { useMemo } from 'react'
+ import type { YearGroup } from '../types'
+ import { TotalsRow } from './TotalsRow'
+ import { CategoryBreakdown } from './CategoryBreakdown'
++import { CityStats } from './CityStats'
+ 
+ interface Props {
+   year: YearGroup
++  /** Home base airport (e.g. ICN), excluded from city-visit counts. */
++  base?: string | null
+   onExportYear?: (year: string) => void
+   onRemoveYear?: (year: string) => void
+ }
+ 
+-export function YearSummary({ year, onExportYear, onRemoveYear }: Props) {
++export function YearSummary({ year, base, onExportYear, onRemoveYear }: Props) {
++  const flights = useMemo(() => year.months.flatMap((m) => m.flights), [year])
+   return (
+     <section className="card year">
+       <header className="year__head">
+@@ -41,6 +46,7 @@ export function YearSummary({ year, onExportYear, onRemoveYear }: Props) {
+       <div className="year__categories">
+         <CategoryBreakdown byCategory={year.byCategory} />
+       </div>
++      <CityStats flights={flights} base={base} />
+     </section>
+   )
+ }
+diff --git a/src/lib/cloud.ts b/src/lib/cloud.ts
+index fd3509b..4b3beab 100644
+--- a/src/lib/cloud.ts
++++ b/src/lib/cloud.ts
+@@ -5,8 +5,15 @@ import {
+   signOut as fbSignOut,
+   type User,
+ } from 'firebase/auth'
+-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+-import type { ParsedLogbook } from '../types'
++import {
++  collection,
++  doc,
++  getDocs,
++  onSnapshot,
++  serverTimestamp,
++  writeBatch,
++} from 'firebase/firestore'
++import type { FlightEntry, ParsedLogbook } from '../types'
+ import { getDb, getFirebaseAuth } from './firebase'
+ 
+ export interface CloudUser {
+@@ -15,6 +22,15 @@ export interface CloudUser {
+   email: string | null
+ }
+ 
++/** Snapshot of the cloud logbook delivered to subscribers. */
++export interface CloudSnapshot {
++  data: ParsedLogbook | null
++  /** Server-side updatedAt of the meta doc in ms (0 when unknown). */
++  updatedAtMs: number
++  /** True when the data came from the pre-sharding single-document format. */
++  legacy: boolean
++}
++
+ function toCloudUser(user: User | null): CloudUser | null {
+   if (!user) return null
+   return { uid: user.uid, displayName: user.displayName, email: user.email }
+@@ -32,53 +48,139 @@ export async function signOut(): Promise<void> {
+   await fbSignOut(getFirebaseAuth())
+ }
+ 
+-function logbookRef(uid: string) {
++/*
++ * Storage layout (sharded by year to stay far below Firestore's 1 MiB
++ * per-document limit even for very long careers):
++ *
++ *   logbooks/{uid}              -> { pilot, summary, updatedAt }
++ *   logbooks/{uid}/years/{YYYY} -> { flights: FlightEntry[] }
++ *
++ * The legacy layout stored everything (including `flights`) in the meta doc;
++ * it is read transparently and rewritten in the new format on the next save.
++ */
++function metaRef(uid: string) {
+   return doc(getDb(), 'logbooks', uid)
+ }
+ 
++function yearsCol(uid: string) {
++  return collection(getDb(), 'logbooks', uid, 'years')
++}
++
++function groupFlightsByYear(flights: FlightEntry[]): Map<string, FlightEntry[]> {
++  const byYear = new Map<string, FlightEntry[]>()
++  for (const f of flights) {
++    const year = f.date.slice(0, 4)
++    const bucket = byYear.get(year) ?? []
++    bucket.push(f)
++    byYear.set(year, bucket)
++  }
++  return byYear
++}
++
++function sortByDate(flights: FlightEntry[]): FlightEntry[] {
++  return [...flights].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
++}
++
+ /**
+- * Persist the whole logbook as a single per-user document. A typical flight
+- * entry is ~150 bytes of JSON, so even decades of flying fit comfortably
+- * within Firestore's 1 MiB document limit.
++ * Persist the logbook: meta doc + one doc per year. Year docs that no longer
++ * exist locally are deleted so removals propagate to other devices. A single
++ * batch keeps the update atomic (batch limit 500 ops >> years in a career).
+  */
+ export async function saveCloudLogbook(uid: string, data: ParsedLogbook): Promise<void> {
+-  await setDoc(logbookRef(uid), {
++  const byYear = groupFlightsByYear(data.flights)
++  const existing = await getDocs(yearsCol(uid))
++
++  const batch = writeBatch(getDb())
++  // set() without merge replaces the meta doc, which also drops the legacy
++  // `flights` array on first save after migration.
++  batch.set(metaRef(uid), {
+     pilot: data.pilot,
+     summary: data.summary,
+-    flights: data.flights,
+     updatedAt: serverTimestamp(),
+   })
++  for (const [year, flights] of byYear) {
++    batch.set(doc(yearsCol(uid), year), { flights })
++  }
++  for (const d of existing.docs) {
++    if (!byYear.has(d.id)) batch.delete(d.ref)
++  }
++  await batch.commit()
+ }
+ 
+ export async function clearCloudLogbook(uid: string): Promise<void> {
+-  await setDoc(logbookRef(uid), {
+-    pilot: {},
+-    summary: {},
+-    flights: [],
+-    updatedAt: serverTimestamp(),
+-  })
++  const existing = await getDocs(yearsCol(uid))
++  const batch = writeBatch(getDb())
++  batch.set(metaRef(uid), { pilot: {}, summary: {}, updatedAt: serverTimestamp() })
++  for (const d of existing.docs) batch.delete(d.ref)
++  await batch.commit()
++}
++
++interface MetaState {
++  exists: boolean
++  pilot: ParsedLogbook['pilot']
++  summary: ParsedLogbook['summary']
++  updatedAtMs: number
++  legacyFlights?: FlightEntry[]
+ }
+ 
+ /**
+- * Subscribe to the user's cloud logbook. Emits null when no document exists
+- * yet. Snapshots caused by this client's own pending writes are skipped so
+- * local saves don't echo back into state.
++ * Subscribe to the user's cloud logbook (meta doc + years collection).
++ * Emits only after both listeners have delivered their initial snapshot, and
++ * skips snapshots caused by this client's own pending writes so local saves
++ * don't echo back into state.
+  */
+ export function watchCloudLogbook(
+   uid: string,
+-  cb: (data: ParsedLogbook | null) => void,
++  cb: (snapshot: CloudSnapshot) => void,
+ ): () => void {
+-  return onSnapshot(logbookRef(uid), (snap) => {
+-    if (snap.metadata.hasPendingWrites) return
+-    if (!snap.exists()) {
+-      cb(null)
++  let meta: MetaState | null = null
++  let years: Map<string, FlightEntry[]> | null = null
++
++  const emit = () => {
++    if (meta === null || years === null) return
++    const hasYearDocs = years.size > 0
++    if (!meta.exists && !hasYearDocs) {
++      cb({ data: null, updatedAtMs: 0, legacy: false })
+       return
+     }
+-    const raw = snap.data()
++    const legacy = !hasYearDocs && Array.isArray(meta.legacyFlights)
++    const flights = legacy
++      ? sortByDate(meta.legacyFlights ?? [])
++      : sortByDate([...years.values()].flat())
+     cb({
++      data: { pilot: meta.pilot, summary: meta.summary, flights },
++      updatedAtMs: meta.updatedAtMs,
++      legacy,
++    })
++  }
++
++  const unsubMeta = onSnapshot(metaRef(uid), (snap) => {
++    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
++    const raw = snap.exists() ? snap.data() : {}
++    meta = {
++      exists: snap.exists(),
+       pilot: raw.pilot ?? {},
+       summary: raw.summary ?? {},
+-      flights: Array.isArray(raw.flights) ? raw.flights : [],
+-    })
++      updatedAtMs:
++        typeof raw.updatedAt?.toMillis === 'function' ? raw.updatedAt.toMillis() : 0,
++      legacyFlights: Array.isArray(raw.flights) ? raw.flights : undefined,
++    }
++    emit()
++  })
++
++  const unsubYears = onSnapshot(yearsCol(uid), (snap) => {
++    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
++    const next = new Map<string, FlightEntry[]>()
++    for (const d of snap.docs) {
++      const flights = d.data().flights
++      if (Array.isArray(flights)) next.set(d.id, flights)
++    }
++    years = next
++    emit()
+   })
++
++  return () => {
++    unsubMeta()
++    unsubYears()
++  }
+ }
+diff --git a/src/lib/flightId.ts b/src/lib/flightId.ts
+new file mode 100644
+index 0000000..3485ca5
+--- /dev/null
++++ b/src/lib/flightId.ts
+@@ -0,0 +1,14 @@
++import type { FlightEntry } from '../types'
++
++/**
++ * Identity used to de-duplicate sectors across sources (PDF, OCR pass, CSV).
++ *
++ * Tail is part of the key so two sectors flown on the same day, same flight
++ * number and same route but on different airframes (aircraft swap, return
++ * after diversion) are kept as separate flights instead of being silently
++ * collapsed. Report times are excluded because CSV exports do not carry them.
++ * Uppercased so OCR case wobble does not create duplicates.
++ */
++export function flightId(f: FlightEntry): string {
++  return `${f.date}|${f.flightNo}|${f.from}|${f.to}|${f.tail}`.toUpperCase()
++}
+diff --git a/src/lib/ocrCleanup.ts b/src/lib/ocrCleanup.ts
+index 6f1266a..d8e71e3 100644
+--- a/src/lib/ocrCleanup.ts
++++ b/src/lib/ocrCleanup.ts
+@@ -26,6 +26,8 @@ export function cleanupOcrText(raw: string): string {
+     .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+     // Fancy slashes
+     .replace(/[\u2044\u2215\uFF0F]/g, '/')
++    // Fullwidth / typographic asterisks \u2192 ASCII '*' (T/O / L/D markers)
++    .replace(/[\uFF0A\u2731\u2217\u204E]/g, '*')
+ 
+   // Dates like "2025 . 03 . 08" or "2025 - 03 - 08" → "2025/03/08"
+   text = text.replace(
+diff --git a/src/lib/parseLogbook.ts b/src/lib/parseLogbook.ts
+index 640ed54..1d11577 100644
+--- a/src/lib/parseLogbook.ts
++++ b/src/lib/parseLogbook.ts
+@@ -1,6 +1,7 @@
+ import type { FlightEntry, LogbookSummary, ParsedLogbook, PilotInfo } from '../types'
+ import { parseDurationToMinutes } from './time'
+ import { cleanupOcrText } from './ocrCleanup'
++import { flightId } from './flightId'
+ 
+ const DATE_RE = /\d{4}\/\d{2}\/\d{2}/
+ const ROUTE_RE = /^[A-Z]{3}-[A-Z]{3}$/
+@@ -109,7 +110,21 @@ export function parseFlightLine(line: string): FlightEntry | null {
+   const durationTimes = times.length > 4 ? times.slice(-4) : times
+   const [dutyMin, flightMin, nightMin, instrumentMin] = durationTimes.map(parseDurationToMinutes)
+ 
+-  const asterisks = (remainder.match(/\*/g) ?? []).length
++  // T/O and L/D marker columns follow the last duration. Empty marker cells
++  // sometimes OCR as '-', '.' or '\u00b7'; when such placeholders are present the
++  // column position disambiguates a lone '*' (e.g. "- *" = landing only).
++  // With no placeholder a lone '*' is ambiguous and is treated as T/O (first
++  // column) \u2014 use the CSV edit/re-import flow to correct individual sectors.
++  const lastTime = durationTimes[durationTimes.length - 1]
++  const markerText = remainder.slice(remainder.lastIndexOf(lastTime) + lastTime.length)
++  const markerTokens = markerText
++    .replace(/\*/g, ' * ')
++    .trim()
++    .split(/\s+/)
++    .filter((t) => /^[*\-.\u00b7]$/.test(t))
++    .slice(0, 2)
++  const takeoff = markerTokens[0] === '*'
++  const landing = markerTokens[1] === '*'
+ 
+   return {
+     date,
+@@ -125,8 +140,8 @@ export function parseFlightLine(line: string): FlightEntry | null {
+     flightMin,
+     nightMin,
+     instrumentMin,
+-    takeoff: asterisks >= 1,
+-    landing: asterisks >= 2,
++    takeoff,
++    landing,
+   }
+ }
+ 
+@@ -163,7 +178,9 @@ function parseSummary(raw: string): LogbookSummary {
+   const firstFlight = raw.search(
+     /\d{4}\/\d{2}\/\d{2}\s+[A-Z0-9]+\s+\S+\s+\S+\s+[A-Z]{3}-[A-Z]{3}/,
+   )
+-  const head = firstFlight > 0 ? raw.slice(0, firstFlight) : raw
++  // firstFlight === 0 means the text starts directly with flight rows \u2014 there
++  // is no summary header, so head must be empty (not the whole document).
++  const head = firstFlight >= 0 ? raw.slice(0, firstFlight) : raw
+ 
+   const durations = head.match(/\b\d+:\d{1,2}\b/g) ?? []
+   const mins = durations.map(parseDurationToMinutes)
+@@ -197,7 +214,7 @@ export function parseLogbook(raw: string): ParsedLogbook {
+     const entry = parseFlightLine(line)
+     if (!entry) continue
+     // De-duplicate identical rows (can happen with overlapping OCR passes).
+-    const id = `${entry.date}|${entry.flightNo}|${entry.from}|${entry.to}`
++    const id = flightId(entry)
+     if (seen.has(id)) continue
+     seen.add(id)
+     flights.push(entry)
+diff --git a/src/lib/stats.ts b/src/lib/stats.ts
+new file mode 100644
+index 0000000..cbbc0f5
+--- /dev/null
++++ b/src/lib/stats.ts
+@@ -0,0 +1,65 @@
++import type { FlightEntry } from '../types'
++
++export interface CityCount {
++  city: string
++  count: number
++}
++
++export interface RouteCount {
++  route: string
++  count: number
++}
++
++/**
++ * Infer the pilot's home base as the most frequent departure airport
++ * (e.g. ICN for a Korean-airline logbook). Returns null when unknown.
++ */
++export function inferHomeBase(flights: FlightEntry[]): string | null {
++  const counts = new Map<string, number>()
++  for (const f of flights) {
++    if (!f.from) continue
++    counts.set(f.from, (counts.get(f.from) ?? 0) + 1)
++  }
++  let best: string | null = null
++  let bestN = 0
++  for (const [city, n] of counts) {
++    if (n > bestN) {
++      best = city
++      bestN = n
++    }
++  }
++  return best
++}
++
++/**
++ * Count how many times each city was visited (= arrival airport of a sector),
++ * sorted by count desc, then alphabetically. The home base can be excluded so
++ * that returning to ICN is not counted as "visiting" ICN.
++ */
++export function cityVisitCounts(
++  flights: FlightEntry[],
++  excludeBase?: string | null,
++): CityCount[] {
++  const counts = new Map<string, number>()
++  for (const f of flights) {
++    if (!f.to) continue
++    if (excludeBase && f.to === excludeBase) continue
++    counts.set(f.to, (counts.get(f.to) ?? 0) + 1)
++  }
++  return [...counts.entries()]
++    .map(([city, count]) => ({ city, count }))
++    .sort((a, b) => b.count - a.count || (a.city < b.city ? -1 : 1))
++}
++
++/** Count sectors per route ("ICN-LAX"), sorted by count desc. */
++export function routeCounts(flights: FlightEntry[]): RouteCount[] {
++  const counts = new Map<string, number>()
++  for (const f of flights) {
++    if (!f.from || !f.to) continue
++    const route = `${f.from}-${f.to}`
++    counts.set(route, (counts.get(route) ?? 0) + 1)
++  }
++  return [...counts.entries()]
++    .map(([route, count]) => ({ route, count }))
++    .sort((a, b) => b.count - a.count || (a.route < b.route ? -1 : 1))
++}
+diff --git a/src/lib/storage.ts b/src/lib/storage.ts
+index 9b4fa04..f3fa965 100644
+--- a/src/lib/storage.ts
++++ b/src/lib/storage.ts
+@@ -1,6 +1,26 @@
+ import type { ParsedLogbook } from '../types'
+ 
+ const STORAGE_KEY = 'pilot-logbook.parsed.v1'
++const UPDATED_KEY = 'pilot-logbook.updatedAt.v1'
++
++/** Millisecond timestamp of the last local modification (0 when unknown). */
++export function loadLogbookUpdatedAt(): number {
++  try {
++    const raw = localStorage.getItem(UPDATED_KEY)
++    const n = raw ? Number(raw) : 0
++    return Number.isFinite(n) ? n : 0
++  } catch {
++    return 0
++  }
++}
++
++function touch(): void {
++  try {
++    localStorage.setItem(UPDATED_KEY, String(Date.now()))
++  } catch {
++    // best-effort
++  }
++}
+ 
+ export function loadLogbook(): ParsedLogbook | null {
+   try {
+@@ -15,6 +35,7 @@ export function loadLogbook(): ParsedLogbook | null {
+ export function saveLogbook(data: ParsedLogbook): void {
+   try {
+     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
++    touch()
+   } catch {
+     // Ignore quota / privacy-mode errors — persistence is best-effort.
+   }
+@@ -23,6 +44,7 @@ export function saveLogbook(data: ParsedLogbook): void {
+ export function clearLogbook(): void {
+   try {
+     localStorage.removeItem(STORAGE_KEY)
++    touch() // a deletion is also a modification \u2014 keeps sync ordering honest
+   } catch {
+     // no-op
+   }
+diff --git a/src/main.tsx b/src/main.tsx
+index bef5202..5b4ddbe 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -8,3 +8,13 @@ createRoot(document.getElementById('root')!).render(
+     <App />
+   </StrictMode>,
+ )
++
++// Offline support: cache the app shell so the logbook (stored in
++// localStorage) can be viewed without a connection.
++if (import.meta.env.PROD && 'serviceWorker' in navigator) {
++  window.addEventListener('load', () => {
++    navigator.serviceWorker.register('/sw.js').catch(() => {
++      // Offline caching is best-effort; the app works without it.
++    })
++  })
++}

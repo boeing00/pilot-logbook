@@ -5,14 +5,30 @@ import {
   signOut as fbSignOut,
   type User,
 } from 'firebase/auth'
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
-import type { ParsedLogbook } from '../types'
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  writeBatch,
+} from 'firebase/firestore'
+import type { FlightEntry, ParsedLogbook } from '../types'
 import { getDb, getFirebaseAuth } from './firebase'
 
 export interface CloudUser {
   uid: string
   displayName: string | null
   email: string | null
+}
+
+/** Snapshot of the cloud logbook delivered to subscribers. */
+export interface CloudSnapshot {
+  data: ParsedLogbook | null
+  /** Server-side updatedAt of the meta doc in ms (0 when unknown). */
+  updatedAtMs: number
+  /** True when the data came from the pre-sharding single-document format. */
+  legacy: boolean
 }
 
 function toCloudUser(user: User | null): CloudUser | null {
@@ -32,53 +48,139 @@ export async function signOut(): Promise<void> {
   await fbSignOut(getFirebaseAuth())
 }
 
-function logbookRef(uid: string) {
+/*
+ * Storage layout (sharded by year to stay far below Firestore's 1 MiB
+ * per-document limit even for very long careers):
+ *
+ *   logbooks/{uid}              -> { pilot, summary, updatedAt }
+ *   logbooks/{uid}/years/{YYYY} -> { flights: FlightEntry[] }
+ *
+ * The legacy layout stored everything (including `flights`) in the meta doc;
+ * it is read transparently and rewritten in the new format on the next save.
+ */
+function metaRef(uid: string) {
   return doc(getDb(), 'logbooks', uid)
 }
 
+function yearsCol(uid: string) {
+  return collection(getDb(), 'logbooks', uid, 'years')
+}
+
+function groupFlightsByYear(flights: FlightEntry[]): Map<string, FlightEntry[]> {
+  const byYear = new Map<string, FlightEntry[]>()
+  for (const f of flights) {
+    const year = f.date.slice(0, 4)
+    const bucket = byYear.get(year) ?? []
+    bucket.push(f)
+    byYear.set(year, bucket)
+  }
+  return byYear
+}
+
+function sortByDate(flights: FlightEntry[]): FlightEntry[] {
+  return [...flights].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+}
+
 /**
- * Persist the whole logbook as a single per-user document. A typical flight
- * entry is ~150 bytes of JSON, so even decades of flying fit comfortably
- * within Firestore's 1 MiB document limit.
+ * Persist the logbook: meta doc + one doc per year. Year docs that no longer
+ * exist locally are deleted so removals propagate to other devices. A single
+ * batch keeps the update atomic (batch limit 500 ops >> years in a career).
  */
 export async function saveCloudLogbook(uid: string, data: ParsedLogbook): Promise<void> {
-  await setDoc(logbookRef(uid), {
+  const byYear = groupFlightsByYear(data.flights)
+  const existing = await getDocs(yearsCol(uid))
+
+  const batch = writeBatch(getDb())
+  // set() without merge replaces the meta doc, which also drops the legacy
+  // `flights` array on first save after migration.
+  batch.set(metaRef(uid), {
     pilot: data.pilot,
     summary: data.summary,
-    flights: data.flights,
     updatedAt: serverTimestamp(),
   })
+  for (const [year, flights] of byYear) {
+    batch.set(doc(yearsCol(uid), year), { flights })
+  }
+  for (const d of existing.docs) {
+    if (!byYear.has(d.id)) batch.delete(d.ref)
+  }
+  await batch.commit()
 }
 
 export async function clearCloudLogbook(uid: string): Promise<void> {
-  await setDoc(logbookRef(uid), {
-    pilot: {},
-    summary: {},
-    flights: [],
-    updatedAt: serverTimestamp(),
-  })
+  const existing = await getDocs(yearsCol(uid))
+  const batch = writeBatch(getDb())
+  batch.set(metaRef(uid), { pilot: {}, summary: {}, updatedAt: serverTimestamp() })
+  for (const d of existing.docs) batch.delete(d.ref)
+  await batch.commit()
+}
+
+interface MetaState {
+  exists: boolean
+  pilot: ParsedLogbook['pilot']
+  summary: ParsedLogbook['summary']
+  updatedAtMs: number
+  legacyFlights?: FlightEntry[]
 }
 
 /**
- * Subscribe to the user's cloud logbook. Emits null when no document exists
- * yet. Snapshots caused by this client's own pending writes are skipped so
- * local saves don't echo back into state.
+ * Subscribe to the user's cloud logbook (meta doc + years collection).
+ * Emits only after both listeners have delivered their initial snapshot, and
+ * skips snapshots caused by this client's own pending writes so local saves
+ * don't echo back into state.
  */
 export function watchCloudLogbook(
   uid: string,
-  cb: (data: ParsedLogbook | null) => void,
+  cb: (snapshot: CloudSnapshot) => void,
 ): () => void {
-  return onSnapshot(logbookRef(uid), (snap) => {
-    if (snap.metadata.hasPendingWrites) return
-    if (!snap.exists()) {
-      cb(null)
+  let meta: MetaState | null = null
+  let years: Map<string, FlightEntry[]> | null = null
+
+  const emit = () => {
+    if (meta === null || years === null) return
+    const hasYearDocs = years.size > 0
+    if (!meta.exists && !hasYearDocs) {
+      cb({ data: null, updatedAtMs: 0, legacy: false })
       return
     }
-    const raw = snap.data()
+    const legacy = !hasYearDocs && Array.isArray(meta.legacyFlights)
+    const flights = legacy
+      ? sortByDate(meta.legacyFlights ?? [])
+      : sortByDate([...years.values()].flat())
     cb({
+      data: { pilot: meta.pilot, summary: meta.summary, flights },
+      updatedAtMs: meta.updatedAtMs,
+      legacy,
+    })
+  }
+
+  const unsubMeta = onSnapshot(metaRef(uid), (snap) => {
+    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
+    const raw = snap.exists() ? snap.data() : {}
+    meta = {
+      exists: snap.exists(),
       pilot: raw.pilot ?? {},
       summary: raw.summary ?? {},
-      flights: Array.isArray(raw.flights) ? raw.flights : [],
-    })
+      updatedAtMs:
+        typeof raw.updatedAt?.toMillis === 'function' ? raw.updatedAt.toMillis() : 0,
+      legacyFlights: Array.isArray(raw.flights) ? raw.flights : undefined,
+    }
+    emit()
   })
+
+  const unsubYears = onSnapshot(yearsCol(uid), (snap) => {
+    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
+    const next = new Map<string, FlightEntry[]>()
+    for (const d of snap.docs) {
+      const flights = d.data().flights
+      if (Array.isArray(flights)) next.set(d.id, flights)
+    }
+    years = next
+    emit()
+  })
+
+  return () => {
+    unsubMeta()
+    unsubYears()
+  }
 }

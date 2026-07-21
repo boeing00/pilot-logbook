@@ -4,13 +4,16 @@ import { monthLabel } from '../lib/aggregate'
 import { FlightTable } from './FlightTable'
 import { TotalsRow } from './TotalsRow'
 import { CategoryBreakdown } from './CategoryBreakdown'
+import { CityStats } from './CityStats'
 
 interface Props {
   group: MonthGroup
+  /** Home base airport (e.g. ICN), excluded from city-visit counts. */
+  base?: string | null
   defaultOpen?: boolean
 }
 
-export function MonthSection({ group, defaultOpen = false }: Props) {
+export function MonthSection({ group, base, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
 
   return (
@@ -34,6 +37,7 @@ export function MonthSection({ group, defaultOpen = false }: Props) {
       <div className="month__categories">
         <CategoryBreakdown byCategory={group.byCategory} />
       </div>
+      <CityStats flights={group.flights} base={base} compact />
 
       {open && <FlightTable flights={group.flights} />}
     </section>
