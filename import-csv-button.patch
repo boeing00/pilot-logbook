@@ -1,0 +1,65 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 8bad042..e4412db 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -228,6 +228,8 @@ export default function App() {
+   const years = useMemo(() => groupByYear(months), [months])
+   const homeBase = useMemo(() => inferHomeBase(data?.flights ?? []), [data])
+ 
++  const csvInputRef = useRef<HTMLInputElement>(null)
++
+   async function handleFiles(files: File[]) {
+     setError('')
+     if (files.some(isHeicFile)) {
+@@ -249,16 +251,19 @@ export default function App() {
+       for (const file of supported) {
+         setProgress(`Reading ${file.name}…`)
+         if (isCsvFile(file)) {
+-          // A CSV is an edited export: replace the years it covers so that
+-          // edits and deletions made in the CSV are mirrored into the log.
++          // An imported CSV always wins: for every year it covers, its rows
++          // become the source of truth and fully replace whatever is
++          // currently logged for that year \u2014 edits, additions, and
++          // deletions in the CSV are all applied as-is (no merging with the
++          // PDF/photo data for those years).
+           const flights = csvToFlights(await file.text())
+           if (flights.length === 0) continue
+           const { book, removed } = applyCsvImport(merged, flights)
+           if (removed > 0) {
+             const ok = window.confirm(
+-              `${file.name}: this CSV is missing ${removed} flight(s) that currently exist ` +
+-                `in the covered year(s). Import will remove them from the log ` +
+-                `(edits in the CSV are applied either way). Continue?`,
++              `${file.name} will overwrite ${flights[0].date.slice(0, 4)}\u2013` +
++                `${flights[flights.length - 1].date.slice(0, 4)} in the log, and ` +
++                `${removed} flight(s) not present in this CSV will be removed. Continue?`,
+             )
+             if (!ok) continue
+           }
+@@ -380,6 +385,26 @@ export default function App() {
+               <button type="button" className="btn btn--ghost" onClick={handleExport}>
+                 Export CSV
+               </button>
++              <button
++                type="button"
++                className="btn btn--ghost"
++                disabled={busy}
++                onClick={() => csvInputRef.current?.click()}
++                title="Import an edited CSV \u2014 it overwrites the years it covers"
++              >
++                Import CSV
++              </button>
++              <input
++                ref={csvInputRef}
++                type="file"
++                accept=".csv,text/csv"
++                hidden
++                onChange={(e) => {
++                  const files = e.target.files ? [...e.target.files] : []
++                  e.target.value = ''
++                  if (files.length > 0) void handleFiles(files)
++                }}
++              />
+               <button type="button" className="btn btn--ghost" onClick={handleClear}>
+                 Clear
+               </button>
