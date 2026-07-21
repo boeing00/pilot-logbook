@@ -26,3 +26,5 @@ dist-ssr
 # Tesseract language data downloaded at runtime
 eng.traineddata
 *.traineddata
+
+.firebase/
