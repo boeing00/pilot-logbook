@@ -12,9 +12,11 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
+  type FirestoreError,
 } from 'firebase/firestore'
 import type { FlightEntry, ParsedLogbook } from '../types'
 import { getDb, getFirebaseAuth } from './firebase'
+import { compact } from './summary'
 
 export interface CloudUser {
   uid: string
@@ -29,6 +31,12 @@ export interface CloudSnapshot {
   updatedAtMs: number
   /** True when the data came from the pre-sharding single-document format. */
   legacy: boolean
+  /**
+   * True when Firestore served this from its local cache without having
+   * reached the server. Cached snapshots are not authoritative — treating one
+   * as a real answer would let a stale copy overwrite newer local edits.
+   */
+  fromCache: boolean
 }
 
 function toCloudUser(user: User | null): CloudUser | null {
@@ -94,8 +102,10 @@ export async function saveCloudLogbook(uid: string, data: ParsedLogbook): Promis
   // set() without merge replaces the meta doc, which also drops the legacy
   // `flights` array on first save after migration.
   batch.set(metaRef(uid), {
-    pilot: data.pilot,
-    summary: data.summary,
+    // compact() guards the write: a single undefined field anywhere in here
+    // fails the whole batch, and the logbook silently stops syncing.
+    pilot: compact(data.pilot),
+    summary: compact(data.summary),
     updatedAt: serverTimestamp(),
   })
   for (const [year, flights] of byYear) {
@@ -128,19 +138,27 @@ interface MetaState {
  * Emits only after both listeners have delivered their initial snapshot, and
  * skips snapshots caused by this client's own pending writes so local saves
  * don't echo back into state.
+ *
+ * `onError` matters: a Firestore listener that fails — rules not deployed, no
+ * database created, a blocked connection — reports it here and nowhere else.
+ * Without it the subscription dies quietly and the UI waits forever.
  */
 export function watchCloudLogbook(
   uid: string,
   cb: (snapshot: CloudSnapshot) => void,
+  onError?: (error: FirestoreError) => void,
 ): () => void {
   let meta: MetaState | null = null
   let years: Map<string, FlightEntry[]> | null = null
+  let metaFromCache = true
+  let yearsFromCache = true
 
   const emit = () => {
     if (meta === null || years === null) return
     const hasYearDocs = years.size > 0
+    const fromCache = metaFromCache || yearsFromCache
     if (!meta.exists && !hasYearDocs) {
-      cb({ data: null, updatedAtMs: 0, legacy: false })
+      cb({ data: null, updatedAtMs: 0, legacy: false, fromCache })
       return
     }
     const legacy = !hasYearDocs && Array.isArray(meta.legacyFlights)
@@ -151,32 +169,44 @@ export function watchCloudLogbook(
       data: { pilot: meta.pilot, summary: meta.summary, flights },
       updatedAtMs: meta.updatedAtMs,
       legacy,
+      fromCache,
     })
   }
 
-  const unsubMeta = onSnapshot(metaRef(uid), (snap) => {
-    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
-    const raw = snap.exists() ? snap.data() : {}
-    meta = {
-      exists: snap.exists(),
-      pilot: raw.pilot ?? {},
-      summary: raw.summary ?? {},
-      updatedAtMs:
-        typeof raw.updatedAt?.toMillis === 'function' ? raw.updatedAt.toMillis() : 0,
-      legacyFlights: Array.isArray(raw.flights) ? raw.flights : undefined,
-    }
-    emit()
+  // Cached snapshots are still emitted, flagged rather than dropped: silently
+  // discarding them is what left the status stuck on "Connecting…" whenever the
+  // server could not be reached.
+  const unsubMeta = onSnapshot(metaRef(uid), {
+    next: (snap) => {
+      if (snap.metadata.hasPendingWrites) return
+      metaFromCache = snap.metadata.fromCache
+      const raw = snap.exists() ? snap.data() : {}
+      meta = {
+        exists: snap.exists(),
+        pilot: raw.pilot ?? {},
+        summary: raw.summary ?? {},
+        updatedAtMs:
+          typeof raw.updatedAt?.toMillis === 'function' ? raw.updatedAt.toMillis() : 0,
+        legacyFlights: Array.isArray(raw.flights) ? raw.flights : undefined,
+      }
+      emit()
+    },
+    error: (err) => onError?.(err),
   })
 
-  const unsubYears = onSnapshot(yearsCol(uid), (snap) => {
-    if (snap.metadata.hasPendingWrites || snap.metadata.fromCache) return
-    const next = new Map<string, FlightEntry[]>()
-    for (const d of snap.docs) {
-      const flights = d.data().flights
-      if (Array.isArray(flights)) next.set(d.id, flights)
-    }
-    years = next
-    emit()
+  const unsubYears = onSnapshot(yearsCol(uid), {
+    next: (snap) => {
+      if (snap.metadata.hasPendingWrites) return
+      yearsFromCache = snap.metadata.fromCache
+      const next = new Map<string, FlightEntry[]>()
+      for (const d of snap.docs) {
+        const flights = d.data().flights
+        if (Array.isArray(flights)) next.set(d.id, flights)
+      }
+      years = next
+      emit()
+    },
+    error: (err) => onError?.(err),
   })
 
   return () => {

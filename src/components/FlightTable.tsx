@@ -4,9 +4,11 @@ import { formatMinutes } from '../lib/time'
 
 interface Props {
   flights: FlightEntry[]
+  /** Delete a single sector. The column is hidden when no handler is given. */
+  onRemove?: (flight: FlightEntry) => void
 }
 
-export function FlightTable({ flights }: Props) {
+export function FlightTable({ flights, onRemove }: Props) {
   return (
     <div className="table-wrap">
       <table className="flight-table">
@@ -23,11 +25,13 @@ export function FlightTable({ flights }: Props) {
             <th className="num">Inst</th>
             <th className="center">T/O</th>
             <th className="center">L/D</th>
+            {onRemove && <th className="center col-remove" aria-label="Delete" />}
           </tr>
         </thead>
         <tbody>
           {flights.map((f, i) => {
             const isAuditor = flightCategory(f) === 'auditor'
+            const route = f.from && f.to ? `${f.from}–${f.to}` : ''
             return (
               <tr
                 key={`${f.date}-${f.flightNo}-${f.reportOut}-${i}`}
@@ -59,6 +63,19 @@ export function FlightTable({ flights }: Props) {
                 <td className="num mono">{formatMinutes(f.instrumentMin)}</td>
                 <td className="center mono">{f.takeoff ? '1' : <span className="dim">–</span>}</td>
                 <td className="center mono">{f.landing ? '1' : <span className="dim">–</span>}</td>
+                {onRemove && (
+                  <td className="center col-remove">
+                    <button
+                      type="button"
+                      className="row-remove"
+                      aria-label={`Delete the ${f.date} flight ${f.flightNo} ${route}`}
+                      title="Delete this flight"
+                      onClick={() => onRemove(f)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                )}
               </tr>
             )
           })}

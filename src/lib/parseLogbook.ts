@@ -171,7 +171,7 @@ function parsePilot(raw: string): PilotInfo {
  * before the flight rows, e.g.
  *   13206:27 3128:29 3026:07 7500:15 4502:52 10549:35 96:53 hr 0:0 hr
  */
-function parseSummary(raw: string): LogbookSummary {
+function parseSummary(raw: string, flights: FlightEntry[]): LogbookSummary {
   const summary: LogbookSummary = {}
   // Isolate the region before the first flight-log date to avoid capturing
   // durations that belong to flight rows.
@@ -184,6 +184,18 @@ function parseSummary(raw: string): LogbookSummary {
 
   const durations = head.match(/\b\d+:\d{1,2}\b/g) ?? []
   const mins = durations.map(parseDurationToMinutes)
+
+  // Three structural guards, because a misread header used to overwrite a
+  // career total with whatever duration happened to appear first:
+  //   1. the AFLIS block is a run of at least six durations;
+  //   2. the career total is the largest of them — it contains all the others;
+  //   3. it cannot be smaller than the flying listed underneath it.
+  const career = mins[0] ?? 0
+  const flownHere = flights.reduce((sum, f) => sum + f.flightMin, 0)
+  if (mins.length < 6) return summary
+  if (career <= 0 || career < Math.max(...mins.slice(0, 6))) return summary
+  if (career < flownHere) return summary
+
   // Expected order per the AFLIS summary layout.
   if (mins[0] != null) summary.totalFlightMin = mins[0]
   if (mins[1] != null) summary.typeFlightMin = mins[1]
@@ -199,6 +211,11 @@ function parseSummary(raw: string): LogbookSummary {
     summary.typeFlightLabel = typeLabel[1]
     summary.typeCaptainLabel = typeLabel[1]
   }
+
+  // The printed totals already include every sector in this report, so the
+  // last one it lists is the point after which new flying must be added.
+  const last = flights.at(-1)
+  if (last) summary.asOf = last.date
 
   return summary
 }
@@ -224,7 +241,7 @@ export function parseLogbook(raw: string): ParsedLogbook {
 
   return {
     pilot: parsePilot(normalized),
-    summary: parseSummary(normalized),
+    summary: parseSummary(normalized, flights),
     flights,
   }
 }

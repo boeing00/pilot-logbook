@@ -43,6 +43,12 @@ export interface LogbookSummary {
   instrumentFlightMin?: number
   monthFlightMin?: number
   monthDeadheadMin?: number
+  /**
+   * Date the cumulative totals are current as of (YYYY/MM/DD) — the last
+   * sector covered by the report that supplied them. Flights logged after this
+   * date are added on top of the baseline instead of being assumed included.
+   */
+  asOf?: string
 }
 
 export interface PilotInfo {

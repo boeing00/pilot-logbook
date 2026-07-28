@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import type { FlightEntry, ParsedLogbook } from './types'
+import type { FlightEntry, MonthGroup, ParsedLogbook } from './types'
 import { extractText, isCsvFile, isHeicFile, isSupportedFile } from './lib/extractText'
 import { parseLogbook } from './lib/parseLogbook'
 import { groupByMonth, groupByYear } from './lib/aggregate'
 import { clearLogbook, loadLogbook, loadLogbookUpdatedAt, saveLogbook } from './lib/storage'
 import { csvToFlights, downloadCsv, flightsToCsv } from './lib/csv'
 import { inferHomeBase } from './lib/stats'
+import { compact, mergeSummary } from './lib/summary'
+import { formatMinutes } from './lib/time'
 import { flightId } from './lib/flightId'
 import { isCloudConfigured } from './lib/firebase'
 import {
@@ -23,6 +25,31 @@ import { SummaryCard } from './components/SummaryCard'
 import { CategorySummary } from './components/CategorySummary'
 import { YearSummary } from './components/YearSummary'
 import { MonthSection } from './components/MonthSection'
+import { FlightForm } from './components/FlightForm'
+import type { DraftSeed } from './lib/flightDraft'
+import { ReviewPanel, type PendingImport, type ReviewResult } from './components/ReviewPanel'
+
+/**
+ * Existing data wins; the incoming record only fills gaps. A re-uploaded blurry
+ * photo must never overwrite good values from an earlier PDF with a worse OCR
+ * pass. Values are only replaced when the pilot says so — by editing the row in
+ * the import review, or by re-importing an edited CSV.
+ */
+function fillGaps(existing: FlightEntry, next: FlightEntry): FlightEntry {
+  return {
+    ...existing,
+    tail: existing.tail || next.tail,
+    irr: existing.irr || next.irr,
+    reportOut: existing.reportOut || next.reportOut,
+    reportIn: existing.reportIn || next.reportIn,
+    dutyMin: existing.dutyMin || next.dutyMin,
+    flightMin: existing.flightMin || next.flightMin,
+    nightMin: existing.nightMin || next.nightMin,
+    instrumentMin: existing.instrumentMin || next.instrumentMin,
+    takeoff: existing.takeoff || next.takeoff,
+    landing: existing.landing || next.landing,
+  }
+}
 
 function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedLogbook {
   if (!prev) return next
@@ -30,69 +57,19 @@ function mergeLogbooks(prev: ParsedLogbook | null, next: ParsedLogbook): ParsedL
   for (const f of prev.flights) byId.set(flightId(f), f)
   for (const f of next.flights) {
     const existing = byId.get(flightId(f))
-    // Existing data wins; the new source only fills gaps. A re-uploaded blurry
-    // photo must never overwrite good values from an earlier PDF with a worse
-    // OCR pass. To intentionally change values, edit and re-import the CSV
-    // (that path replaces data instead of merging).
-    byId.set(
-      flightId(f),
-      existing
-        ? {
-            ...existing,
-            tail: existing.tail || f.tail,
-            irr: existing.irr || f.irr,
-            reportOut: existing.reportOut || f.reportOut,
-            reportIn: existing.reportIn || f.reportIn,
-            dutyMin: existing.dutyMin || f.dutyMin,
-            flightMin: existing.flightMin || f.flightMin,
-            nightMin: existing.nightMin || f.nightMin,
-            instrumentMin: existing.instrumentMin || f.instrumentMin,
-            takeoff: existing.takeoff || f.takeoff,
-            landing: existing.landing || f.landing,
-          }
-        : f,
-    )
+    byId.set(flightId(f), existing ? fillGaps(existing, f) : f)
   }
   const flights = [...byId.values()].sort((a, b) =>
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   )
   return {
     pilot: { ...prev.pilot, ...next.pilot },
-    summary: { ...prev.summary, ...next.summary },
+    summary: mergeSummary(prev.summary, next.summary),
     flights,
   }
 }
 
-/**
- * Apply an edited/exported CSV back onto the logbook. The CSV is treated as
- * authoritative for every year it contains: existing flights in those years
- * are replaced by the CSV rows, so edits AND deletions made in the CSV
- * propagate into the log. Years not present in the CSV are left untouched.
- */
-function applyCsvImport(
-  prev: ParsedLogbook | null,
-  imported: FlightEntry[],
-): { book: ParsedLogbook; removed: number; kept: number } {
-  const years = new Set(imported.map((f) => f.date.slice(0, 4)))
-  const outside = (prev?.flights ?? []).filter((f) => !years.has(f.date.slice(0, 4)))
-  const inside = (prev?.flights ?? []).filter((f) => years.has(f.date.slice(0, 4)))
-
-  // De-duplicate rows inside the CSV itself (last occurrence wins).
-  const byId = new Map<string, FlightEntry>()
-  for (const f of imported) byId.set(flightId(f), f)
-
-  const removed = inside.filter((f) => !byId.has(flightId(f))).length
-  const flights = [...outside, ...byId.values()].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
-  )
-  return {
-    book: { pilot: prev?.pilot ?? {}, summary: prev?.summary ?? {}, flights },
-    removed,
-    kept: outside.length,
-  }
-}
-
-type SyncState = 'idle' | 'saving' | 'synced' | 'error'
+type SyncState = 'idle' | 'saving' | 'synced' | 'offline' | 'error'
 
 const EMPTY_BOOK: ParsedLogbook = { pilot: {}, summary: {}, flights: [] }
 
@@ -105,10 +82,18 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  /** Prefill for the manual form, set when it is opened from a month card. */
+  const [formSeed, setFormSeed] = useState<DraftSeed | null>(null)
+  const formRef = useRef<HTMLDivElement>(null)
+  /** Parsed rows waiting for the pilot to check them; nothing is stored yet. */
+  const [pending, setPending] = useState<PendingImport | null>(null)
 
   const cloudEnabled = isCloudConfigured()
   const [user, setUser] = useState<CloudUser | null>(null)
   const [syncState, setSyncState] = useState<SyncState>('idle')
+  /** Firestore's own message, so a failure says why instead of hanging. */
+  const [syncError, setSyncError] = useState('')
   const dataRef = useRef<ParsedLogbook | null>(null)
   dataRef.current = data
 
@@ -133,8 +118,10 @@ export default function App() {
         await clearCloudLogbook(uid)
       }
       setSyncState('synced')
-    } catch {
+      setSyncError('')
+    } catch (err) {
       setSyncState('error')
+      setSyncError(err instanceof Error ? err.message : 'Cloud save failed.')
     }
   }
 
@@ -148,7 +135,16 @@ export default function App() {
     // newer (offline edits) is it merged and pushed back up. Later snapshots
     // come from other devices and replace local state.
     let firstSnapshot = true
-    return watchCloudLogbook(uid, ({ data: remote, updatedAtMs, legacy }) => {
+    return watchCloudLogbook(
+      uid,
+      ({ data: remote, updatedAtMs, legacy, fromCache }) => {
+      // A cached snapshot means the server has not answered yet. Acting on it
+      // could overwrite good local data with a stale copy, so it only updates
+      // the status line.
+      if (fromCache) {
+        setSyncState((prev) => (prev === 'saving' ? prev : 'offline'))
+        return
+      }
       const local = dataRef.current
       if (firstSnapshot) {
         firstSnapshot = false
@@ -196,7 +192,13 @@ export default function App() {
         clearLogbook()
       }
       setSyncState('synced')
-    })
+      setSyncError('')
+      },
+      (err) => {
+        setSyncState('error')
+        setSyncError(`${err.code}: ${err.message}`)
+      },
+    )
   }, [user])
 
   /** Update state + localStorage, and mirror to the cloud when signed in. */
@@ -227,11 +229,38 @@ export default function App() {
   const months = useMemo(() => groupByMonth(data?.flights ?? []), [data])
   const years = useMemo(() => groupByYear(months), [months])
   const homeBase = useMemo(() => inferHomeBase(data?.flights ?? []), [data])
+  /** Prefill the manual form with the airframe from the most recent sector. */
+  const formDefaults = useMemo<DraftSeed>(() => {
+    const last = data?.flights.at(-1)
+    return { aircraft: last?.aircraft, tail: last?.tail }
+  }, [data])
+
+  /**
+   * Open the manual form for a specific month. The date and airframe come from
+   * the last sector already logged there, so adding a missed leg to an old
+   * month does not mean re-typing everything or fixing today's date.
+   */
+  function openFormForMonth(group: MonthGroup) {
+    const last = group.flights.at(-1)
+    setFormSeed({
+      date: last ? last.date.replaceAll('/', '-') : `${group.year}-${group.month}-01`,
+      aircraft: last?.aircraft,
+      tail: last?.tail,
+    })
+    setShowForm(true)
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+  }
 
   const csvInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFiles(files: File[]) {
     setError('')
+    if (pending) {
+      setError('Finish or discard the flights waiting for review before uploading another file.')
+      return
+    }
     if (files.some(isHeicFile)) {
       setError(
         'iPhone HEIC photos are not supported yet. In the share sheet choose Options → Most Compatible to save as JPG, then upload that.',
@@ -246,33 +275,30 @@ export default function App() {
 
     setBusy(true)
     try {
-      let merged = data
-      let addedTotal = 0
+      // Parsing only builds a proposal. Every row goes to the review panel and
+      // the logbook is not touched until the pilot presses Import, so a bad OCR
+      // pass can no longer quietly corrupt months of records.
+      const candidates: FlightEntry[] = []
+      const replaceYears = new Set<string>()
+      const sources: string[] = []
+      let pilot: ParsedLogbook['pilot'] = {}
+      let summary: ParsedLogbook['summary'] = {}
       let csvParseFailed = false
+
       for (const file of supported) {
         setProgress(`Reading ${file.name}…`)
         if (isCsvFile(file)) {
-          // An imported CSV always wins: for every year it covers, its rows
-          // become the source of truth and fully replace whatever is
-          // currently logged for that year \u2014 edits, additions, and
-          // deletions in the CSV are all applied as-is (no merging with the
-          // PDF/photo data for those years).
+          // A CSV is an edited export, so it stays authoritative for the years
+          // it covers: rows missing from it are offered for deletion in the
+          // review panel instead of being silently dropped.
           const flights = csvToFlights(await file.text())
           if (flights.length === 0) {
             csvParseFailed = true
             continue
           }
-          const { book, removed } = applyCsvImport(merged, flights)
-          if (removed > 0) {
-            const ok = window.confirm(
-              `${file.name} will overwrite ${flights[0].date.slice(0, 4)}\u2013` +
-                `${flights[flights.length - 1].date.slice(0, 4)} in the log, and ` +
-                `${removed} flight(s) not present in this CSV will be removed. Continue?`,
-            )
-            if (!ok) continue
-          }
-          addedTotal += flights.length
-          merged = book
+          for (const f of flights) replaceYears.add(f.date.slice(0, 4))
+          candidates.push(...flights)
+          sources.push(file.name)
         } else {
           const text = await extractText(file, (message, ratio) => {
             setProgress(
@@ -280,19 +306,22 @@ export default function App() {
             )
           })
           const parsed = parseLogbook(text)
-          addedTotal += parsed.flights.length
-          merged = mergeLogbooks(merged, parsed)
+          candidates.push(...parsed.flights)
+          pilot = { ...pilot, ...parsed.pilot }
+          summary = { ...summary, ...parsed.summary }
+          sources.push(file.name)
         }
       }
-      if (merged && merged.flights.length > 0) {
-        persist({ ...merged })
-        if (addedTotal === 0 && csvParseFailed) {
-          setError(
-            'CSV를 읽지 못했습니다. Export CSV로 받은 파일을 그대로 편집했는지, 헤더 행(Date, Aircraft, FlightNo …)을 지우지 않았는지, Date 열이 YYYY/MM/DD 형식(또는 엑셀 날짜)인지 확인해 주세요.',
-          )
-        } else if (addedTotal === 0) {
-          setError('No flight rows were recognized in that file. Try a clearer scan or a PDF.')
-        }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+        setPending({
+          sources,
+          flights: candidates,
+          replaceYears: [...replaceYears].sort(),
+          pilot,
+          summary,
+        })
       } else if (csvParseFailed) {
         setError(
           'CSV에서 비행 기록을 찾지 못했습니다. Export CSV로 받은 파일을 그대로 편집했는지, 헤더 행을 지우지 않았는지, Date 열이 YYYY/MM/DD 형식인지 확인해 주세요.',
@@ -308,6 +337,44 @@ export default function App() {
       setBusy(false)
       setProgress('')
     }
+  }
+
+  /**
+   * Commit what the pilot approved in the review panel. Rows they edited are
+   * taken as the truth and overwrite whatever is logged; rows they left alone
+   * keep the old gap-filling behaviour. For a year-replacing CSV import, the
+   * flights they did not tick to keep are dropped.
+   */
+  function commitReview(result: ReviewResult) {
+    if (!pending) return
+    const book = data ?? EMPTY_BOOK
+    const replaced = new Set(pending.replaceYears)
+    const keep = new Set(result.keptIds)
+
+    const byId = new Map<string, FlightEntry>()
+    for (const f of book.flights) {
+      const id = flightId(f)
+      if (replaced.has(f.date.slice(0, 4)) && !keep.has(id)) continue
+      byId.set(id, f)
+    }
+
+    const edited = new Set(result.editedIds)
+    for (const f of result.flights) {
+      const id = flightId(f)
+      const current = byId.get(id)
+      byId.set(id, current && !edited.has(id) ? fillGaps(current, f) : f)
+    }
+
+    const flights = [...byId.values()].sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+    )
+    persist({
+      pilot: { ...book.pilot, ...pending.pilot },
+      summary: mergeSummary(book.summary, pending.summary),
+      flights,
+    })
+    setPending(null)
+    setError('')
   }
 
   function handleClear() {
@@ -331,6 +398,67 @@ export default function App() {
     const flights = data.flights.filter((f) => f.date.startsWith(`${year}/`))
     if (flights.length === 0) return
     downloadCsv(`pilot-logbook-${year}.csv`, flightsToCsv(flights))
+  }
+
+  /**
+   * Log one hand-entered sector. A manual entry is an explicit statement by
+   * the pilot, so unlike an OCR pass it overwrites any existing flight with
+   * the same identity instead of only filling gaps — that makes the form
+   * usable for correcting a badly-scanned row. Returns true when it replaced
+   * one, so the form can say "Updated" rather than "Added".
+   */
+  function handleAddFlight(entry: FlightEntry): boolean {
+    const book = data ?? EMPTY_BOOK
+    const id = flightId(entry)
+    const rest = book.flights.filter((f) => flightId(f) !== id)
+    const replaced = rest.length !== book.flights.length
+    const flights = [...rest, entry].sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+    )
+    persist({ pilot: book.pilot, summary: book.summary, flights })
+    setError('')
+    return replaced
+  }
+
+  /**
+   * Correct the career baseline by hand, for when the report's header was
+   * misread or the pilot wants to anchor the total to a specific print-out.
+   */
+  function handleSetBaseline(totalFlightMin?: number, asOf?: string) {
+    if (!data) return
+    persist({ ...data, summary: compact({ ...data.summary, totalFlightMin, asOf }) })
+  }
+
+  /** "2025-03" (MonthGroup.key) → "2025/03/" date prefix. */
+  function monthPrefix(key: string): string {
+    return `${key.replace('-', '/')}/`
+  }
+
+  function handleExportMonth(key: string) {
+    if (!data) return
+    const flights = data.flights.filter((f) => f.date.startsWith(monthPrefix(key)))
+    if (flights.length === 0) return
+    downloadCsv(`pilot-logbook-${key}.csv`, flightsToCsv(flights))
+  }
+
+  /**
+   * Delete one sector. The confirmation lives here rather than in the row so it
+   * can name the flight and mention cloud sync; an in-row two-step was too easy
+   * to mis-tap on a tablet, where "cancel" and "confirm" ended up pixels apart.
+   */
+  function handleRemoveFlight(flight: FlightEntry) {
+    if (!data) return
+    const id = flightId(flight)
+    const flights = data.flights.filter((f) => flightId(f) !== id)
+    if (flights.length === data.flights.length) return
+    const route = flight.from && flight.to ? ` ${flight.from}→${flight.to}` : ''
+    const cloudNote = user ? '\nThis also removes it from the cloud and your other devices.' : ''
+    const confirmed = window.confirm(
+      `Delete this flight?\n\n${flight.date}  ${flight.flightNo}${route}  ` +
+        `${formatMinutes(flight.flightMin)} flight time${cloudNote}`,
+    )
+    if (!confirmed) return
+    persist(flights.length === 0 ? null : { ...data, flights })
   }
 
   function handleRemoveYear(year: string) {
@@ -369,15 +497,12 @@ export default function App() {
               <div className="cloud">
                 <span
                   className={`cloud__status cloud__status--${syncState}`}
-                  title={
-                    syncState === 'error'
-                      ? 'Cloud save failed — changes are kept locally'
-                      : undefined
-                  }
+                  title={syncError || undefined}
                 >
                   {syncState === 'saving' && 'Syncing…'}
                   {syncState === 'synced' && 'Synced'}
                   {syncState === 'error' && 'Sync error'}
+                  {syncState === 'offline' && 'Offline — saved on this device'}
                   {syncState === 'idle' && 'Connecting…'}
                 </span>
                 <span className="cloud__user" title={user.email ?? undefined}>
@@ -392,6 +517,18 @@ export default function App() {
                 Sign in with Google
               </button>
             ))}
+          <button
+            type="button"
+            className="btn btn--ghost"
+            aria-expanded={showForm}
+            title="Type in a single flight by hand"
+            onClick={() => {
+              setFormSeed(null)
+              setShowForm((v) => !v)
+            }}
+          >
+            {showForm ? 'Close form' : '+ Add flight'}
+          </button>
           {hasData && (
             <>
               <button type="button" className="btn btn--ghost" onClick={handleExport}>
@@ -428,11 +565,49 @@ export default function App() {
       <main className="app__main">
         <FileDropzone onFiles={handleFiles} busy={busy} progress={progress} />
 
+        {pending && (
+          <ReviewPanel
+            pending={pending}
+            existing={data?.flights ?? []}
+            onCommit={commitReview}
+            onCancel={() => setPending(null)}
+          />
+        )}
+
+        {showForm && (
+          <div ref={formRef}>
+            <FlightForm
+              // Remounts when opened from a different month so the prefill
+              // takes effect instead of keeping the previous draft.
+              key={formSeed?.date ?? 'default'}
+              onAdd={handleAddFlight}
+              onClose={() => {
+                setShowForm(false)
+                setFormSeed(null)
+              }}
+              defaults={formSeed ?? formDefaults}
+            />
+          </div>
+        )}
+
         {error && <p className="alert">{error}</p>}
+
+        {cloudEnabled && user && syncState === 'error' && (
+          <p className="alert">
+            Cloud sync failed — your logbook is still saved on this device.
+            <br />
+            <span className="alert__detail">{syncError}</span>
+          </p>
+        )}
 
         {hasData && data && (
           <>
-            <SummaryCard pilot={data.pilot} summary={data.summary} />
+            <SummaryCard
+              pilot={data.pilot}
+              summary={data.summary}
+              flights={data.flights}
+              onSetBaseline={handleSetBaseline}
+            />
 
             <CategorySummary flights={data.flights} />
 
@@ -446,7 +621,15 @@ export default function App() {
                 />
                 <div className="month-list">
                   {year.months.map((m, idx) => (
-                    <MonthSection key={m.key} group={m} base={homeBase} defaultOpen={idx === 0} />
+                    <MonthSection
+                      key={m.key}
+                      group={m}
+                      base={homeBase}
+                      defaultOpen={idx === 0}
+                      onExportMonth={handleExportMonth}
+                      onRemoveFlight={handleRemoveFlight}
+                      onAddFlight={openFormForMonth}
+                    />
                   ))}
                 </div>
               </div>
@@ -458,8 +641,10 @@ export default function App() {
           <section className="empty">
             <h2 className="empty__title">No logbook loaded yet</h2>
             <p className="empty__text">
-              Upload a scan or photo of your flight log above. Flights are grouped by month
-              with per-month subtotals, and each year is summarized separately.{' '}
+              Upload a scan or photo of your flight log above, or use{' '}
+              <strong>+ Add flight</strong> to type a single sector in by hand. Flights are
+              grouped by month with per-month subtotals, and each year is summarized
+              separately.{' '}
               {cloudEnabled
                 ? 'Sign in with Google to sync your logbook across your phone, iPad, and computer.'
                 : 'Everything stays in your browser.'}
