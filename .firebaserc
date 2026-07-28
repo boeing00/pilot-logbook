@@ -1,5 +1,1 @@
-{
-  "projects": {
-    "default": "YOUR_FIREBASE_PROJECT_ID"
-  }
-}
+{ "projects": { "default": "pilot-logbook-53055" } }
