@@ -1,6 +1,6 @@
 import type { FlightEntry } from '../types'
 import { CATEGORY_LABELS, flightCategory } from './category'
-import { formatMinutes, parseDurationToMinutes } from './time'
+import { formatMinutes, parseDurationInput } from './time'
 
 const HEADER = [
   'Date',
@@ -17,6 +17,8 @@ const HEADER = [
   'Instrument',
   'T/O',
   'L/D',
+  'ReportOut',
+  'ReportIn',
 ]
 
 function pad2(n: number): string {
@@ -52,7 +54,7 @@ function normalizeDate(raw: string): string | null {
 }
 
 function cell(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
+  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
   return value
 }
 
@@ -73,6 +75,8 @@ export function flightsToCsv(flights: FlightEntry[]): string {
       formatMinutes(f.instrumentMin),
       f.takeoff ? '1' : '',
       f.landing ? '1' : '',
+      f.reportOut,
+      f.reportIn,
     ]
       .map(cell)
       .join(','),
@@ -139,6 +143,7 @@ function parseCsvRows(text: string): string[][] {
       cellBuf += ch
     }
   }
+  if (inQuotes) throw new Error('CSV has an unclosed quote. Repair the file and try again.')
   if (cellBuf !== '' || row.length > 0) {
     row.push(cellBuf)
     rows.push(row)
@@ -159,8 +164,8 @@ function columnIndex(header: string[], names: string[]): number {
 /**
  * Parse a CSV previously produced by "Export CSV" back into flight entries.
  * Understands both the current header (DutyCode, T/O, L/D) and older exports
- * (IRR, Takeoff, Landing, ReportOut/ReportIn). Rows that don't carry a valid
- * YYYY/MM/DD date are skipped.
+ * (IRR, Takeoff, Landing, ReportOut/ReportIn). Damaged rows stop the import
+ * instead of silently producing an incomplete archive.
  */
 export function csvToFlights(text: string): FlightEntry[] {
   const rows = parseCsvRows(text).filter((r) => r.some((c) => c.trim() !== ''))
@@ -189,9 +194,21 @@ export function csvToFlights(text: string): FlightEntry[] {
   const get = (row: string[], idx: number): string => (idx === -1 ? '' : (row[idx] ?? '').trim())
 
   const flights: FlightEntry[] = []
-  for (const row of rows.slice(1)) {
+  for (const [index, row] of rows.slice(1).entries()) {
+    const rowNumber = index + 2
     const date = normalizeDate(get(row, col.date))
-    if (!date) continue
+    if (!date) throw new Error(`CSV row ${rowNumber}: unrecognized date. Use YYYY/MM/DD.`)
+    const duration = (key: 'duty' | 'flight' | 'night' | 'instrument'): number => {
+      const parsed = parseDurationInput(get(row, col[key]))
+      if (parsed === null) throw new Error(`CSV row ${rowNumber}: invalid ${key === 'flight' ? 'Flight' : key} time. Use H:MM or decimal hours.`)
+      return parsed
+    }
+    const marker = (key: 'takeoff' | 'landing'): boolean => {
+      const raw = get(row, col[key]).toLowerCase()
+      if (['', '0', 'false', 'no', 'n', 'off', '-', '–', '—'].includes(raw)) return false
+      if (['1', 'true', 'yes', 'y', 'on', 'x'].includes(raw)) return true
+      throw new Error(`CSV row ${rowNumber}: invalid ${key} marker. Use 1 or 0.`)
+    }
     flights.push({
       date,
       aircraft: get(row, col.aircraft),
@@ -202,12 +219,12 @@ export function csvToFlights(text: string): FlightEntry[] {
       irr: get(row, col.irr),
       reportOut: get(row, col.reportOut),
       reportIn: get(row, col.reportIn),
-      dutyMin: parseDurationToMinutes(get(row, col.duty)),
-      flightMin: parseDurationToMinutes(get(row, col.flight)),
-      nightMin: parseDurationToMinutes(get(row, col.night)),
-      instrumentMin: parseDurationToMinutes(get(row, col.instrument)),
-      takeoff: get(row, col.takeoff) !== '',
-      landing: get(row, col.landing) !== '',
+      dutyMin: duration('duty'),
+      flightMin: duration('flight'),
+      nightMin: duration('night'),
+      instrumentMin: duration('instrument'),
+      takeoff: marker('takeoff'),
+      landing: marker('landing'),
     })
   }
   return flights

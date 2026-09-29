@@ -14,9 +14,9 @@ export function loadLogbookUpdatedAt(): number {
   }
 }
 
-function touch(): void {
+function touch(updatedAt = Date.now()): void {
   try {
-    localStorage.setItem(UPDATED_KEY, String(Date.now()))
+    localStorage.setItem(UPDATED_KEY, String(updatedAt))
   } catch {
     // best-effort
   }
@@ -32,20 +32,22 @@ export function loadLogbook(): ParsedLogbook | null {
   }
 }
 
-export function saveLogbook(data: ParsedLogbook): void {
+export function saveLogbook(data: ParsedLogbook, updatedAt?: number): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    touch()
+    touch(updatedAt)
+    return true
   } catch {
-    // Ignore quota / privacy-mode errors — persistence is best-effort.
+    return false
   }
 }
 
-export function clearLogbook(): void {
+export function clearLogbook(updatedAt?: number): boolean {
   try {
     localStorage.removeItem(STORAGE_KEY)
-    touch() // a deletion is also a modification \u2014 keeps sync ordering honest
+    touch(updatedAt)
+    return true
   } catch {
-    // no-op
+    return false
   }
 }

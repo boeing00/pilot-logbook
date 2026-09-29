@@ -10,6 +10,7 @@ import {
   doc,
   getDocs,
   onSnapshot,
+  onSnapshotsInSync,
   serverTimestamp,
   writeBatch,
   type FirestoreError,
@@ -152,9 +153,13 @@ export function watchCloudLogbook(
   let years: Map<string, FlightEntry[]> | null = null
   let metaFromCache = true
   let yearsFromCache = true
+  let metaPending = false
+  let yearsPending = false
+  let changed = false
 
   const emit = () => {
-    if (meta === null || years === null) return
+    if (!changed || metaPending || yearsPending || meta === null || years === null) return
+    changed = false
     const hasYearDocs = years.size > 0
     const fromCache = metaFromCache || yearsFromCache
     if (!meta.exists && !hasYearDocs) {
@@ -176,9 +181,10 @@ export function watchCloudLogbook(
   // Cached snapshots are still emitted, flagged rather than dropped: silently
   // discarding them is what left the status stuck on "Connecting…" whenever the
   // server could not be reached.
-  const unsubMeta = onSnapshot(metaRef(uid), {
+  const unsubMeta = onSnapshot(metaRef(uid), { includeMetadataChanges: true }, {
     next: (snap) => {
-      if (snap.metadata.hasPendingWrites) return
+      metaPending = snap.metadata.hasPendingWrites
+      if (metaPending) return
       metaFromCache = snap.metadata.fromCache
       const raw = snap.exists() ? snap.data() : {}
       meta = {
@@ -189,14 +195,15 @@ export function watchCloudLogbook(
           typeof raw.updatedAt?.toMillis === 'function' ? raw.updatedAt.toMillis() : 0,
         legacyFlights: Array.isArray(raw.flights) ? raw.flights : undefined,
       }
-      emit()
+      changed = true
     },
     error: (err) => onError?.(err),
   })
 
-  const unsubYears = onSnapshot(yearsCol(uid), {
+  const unsubYears = onSnapshot(yearsCol(uid), { includeMetadataChanges: true }, {
     next: (snap) => {
-      if (snap.metadata.hasPendingWrites) return
+      yearsPending = snap.metadata.hasPendingWrites
+      if (yearsPending) return
       yearsFromCache = snap.metadata.fromCache
       const next = new Map<string, FlightEntry[]>()
       for (const d of snap.docs) {
@@ -204,13 +211,18 @@ export function watchCloudLogbook(
         if (Array.isArray(flights)) next.set(d.id, flights)
       }
       years = next
-      emit()
+      changed = true
     },
     error: (err) => onError?.(err),
   })
 
+  // Emit after both listeners process a batch. A metadata-only server response
+  // must also clear fromCache/hasPendingWrites even when document data is unchanged.
+  const unsubSync = onSnapshotsInSync(getDb(), emit)
+
   return () => {
     unsubMeta()
     unsubYears()
+    unsubSync()
   }
 }

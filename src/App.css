@@ -24,6 +24,7 @@
 }
 
 .brand__mark {
+  flex-shrink: 0;
   font-size: 30px;
   width: 54px;
   height: 54px;
@@ -94,6 +95,7 @@
 }
 
 .btn {
+  min-height: 44px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
@@ -130,7 +132,17 @@
   text-align: center;
   background: linear-gradient(180deg, rgba(30, 67, 115, 0.18), rgba(16, 35, 61, 0.35));
   transition: border-color 0.15s, background 0.15s;
-  outline: none;
+  cursor: pointer;
+}
+
+.dropzone:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 4px;
+}
+
+.dropzone--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .dropzone--active {
@@ -402,7 +414,7 @@
 /* Category summary cards (A380 PIC vs Auditor) */
 .cat-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -497,7 +509,7 @@
 
 .flight-row--auditor .tail,
 .flight-row--auditor .dim {
-  color: rgba(111, 136, 168, 0.6);
+  color: var(--text-mute);
 }
 
 .flight-row--auditor .duty-code {
@@ -781,7 +793,9 @@
 }
 
 .field input[type='text'],
-.field input[type='date'] {
+.field input[type='date'],
+.field input[type='search'],
+.field select {
   width: 100%;
   padding: 9px 12px;
   border: 1px solid var(--line);
@@ -789,7 +803,8 @@
   background: var(--panel-2);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: 16px;
+  min-height: 44px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -887,6 +902,7 @@
 
 /* Import review */
 .review {
+  overflow: clip;
   padding: 20px 22px 22px;
   border-color: var(--accent);
 }
@@ -1101,6 +1117,7 @@
 }
 
 .row-remove {
+  min-height: 44px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text-mute);
@@ -1173,4 +1190,46 @@
   font-size: 12px;
   opacity: 0.85;
   word-break: break-word;
+}
+
+.logbook-tools {
+  padding: 20px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+
+.logbook-tools__heading {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.logbook-tools__search {
+  flex: 1 1 250px;
+}
+
+.logbook-tools__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .app { padding: 20px 12px 40px; }
+  .brand__tag { font-size: 13px; }
+  .app__actions { width: 100%; gap: 8px; }
+  .app__actions > .btn { flex: 1 1 auto; }
+  .cloud { flex-wrap: wrap; }
+  .dropzone { padding: 24px 16px; }
+  .summary-card, .flight-form, .review, .logbook-tools { padding: 16px; }
+  .year__head { flex-wrap: wrap; }
+  .review__head-actions { flex-wrap: wrap; }
+  .review__sources { overflow-wrap: anywhere; }
+  .summary-card__editor { grid-template-columns: 1fr; }
+  .review__footer { position: sticky; bottom: 0; background: var(--panel); padding: 14px 0; }
 }

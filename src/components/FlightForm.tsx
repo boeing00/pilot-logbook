@@ -88,7 +88,7 @@ export function FlightForm({ onAdd, onClose, defaults }: Props) {
                 {formatMinutes(preview.flightMin)} flight / {formatMinutes(preview.dutyMin)} duty
               </>
             ) : (
-              'Fill in the date and aircraft to log this sector.'
+              typeof built === 'string' ? built : ''
             )}
           </span>
           <button type="submit" className="btn btn--primary">
@@ -97,8 +97,8 @@ export function FlightForm({ onAdd, onClose, defaults }: Props) {
         </div>
       </form>
 
-      {error && <p className="flight-form__error">{error}</p>}
-      {!error && saved && <p className="flight-form__saved">{saved}</p>}
+      {error && <p className="flight-form__error" role="alert">{error}</p>}
+      <p className="flight-form__saved" role="status">{!error && saved}</p>
     </section>
   )
 }

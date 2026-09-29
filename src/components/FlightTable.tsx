@@ -10,7 +10,7 @@ interface Props {
 
 export function FlightTable({ flights, onRemove }: Props) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" role="region" aria-label="Flight records, scroll for all columns" tabIndex={0}>
       <table className="flight-table">
         <thead>
           <tr>
