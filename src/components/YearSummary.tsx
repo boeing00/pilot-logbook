@@ -10,16 +10,17 @@ interface Props {
   base?: string | null
   onExportYear?: (year: string) => void
   onRemoveYear?: (year: string) => void
+  filtered?: boolean
 }
 
-export function YearSummary({ year, base, onExportYear, onRemoveYear }: Props) {
+export function YearSummary({ year, base, onExportYear, onRemoveYear, filtered = false }: Props) {
   const flights = useMemo(() => year.months.flatMap((m) => m.flights), [year])
   return (
     <section className="card year">
       <header className="year__head">
-        <h2 className="year__title">{year.year} annual total</h2>
+        <h2 className="year__title">{year.year} {filtered ? 'matching flights' : 'annual total'}</h2>
         <div className="year__side">
-          <span className="year__months">{year.months.length} months logged</span>
+          <span className="year__months">{year.months.length} months {filtered ? 'matched' : 'logged'}</span>
           {onExportYear && (
             <button
               type="button"

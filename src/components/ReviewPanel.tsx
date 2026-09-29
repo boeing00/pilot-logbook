@@ -23,7 +23,7 @@ export interface ReviewResult {
   flights: FlightEntry[]
   /** flightIds the pilot actually edited — these overwrite existing values. */
   editedIds: string[]
-  /** Existing flights the pilot rescued from a year-replacing CSV import. */
+  /** Existing flights kept unless the pilot explicitly unchecked them. */
   keptIds: string[]
 }
 
@@ -70,7 +70,8 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
       }
     })
   })
-  const [kept, setKept] = useState<Set<string>>(new Set())
+  // Keep absent flights by default, including records synced while reviewing.
+  const [removed, setRemoved] = useState<Set<string>>(new Set())
 
   /** Re-derive entries and issues on every keystroke so the checks stay live. */
   const analysis = useMemo(() => {
@@ -115,8 +116,8 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
 
   /**
    * A CSV is authoritative for the years it covers, so anything logged in
-   * those years that the file does not mention would be dropped. Those flights
-   * are listed explicitly instead of disappearing behind a single confirm.
+   * those years that the file does not mention are listed explicitly and kept
+   * by default. The pilot can opt individual records into removal.
    */
   const removals = useMemo(() => {
     if (pending.replaceYears.length === 0) return []
@@ -125,6 +126,8 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
       (f) => years.has(f.date.slice(0, 4)) && !includedIds.has(flightId(f)),
     )
   }, [existing, includedIds, pending.replaceYears])
+  const keptIds = removals.map(flightId).filter((id) => !removed.has(id))
+  const removalCount = removals.length - keptIds.length
 
   const months = useMemo(() => {
     const map = new Map<string, number[]>()
@@ -155,7 +158,7 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
   }
 
   function toggleKept(id: string): void {
-    setKept((prev) => {
+    setRemoved((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -164,6 +167,7 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
   }
 
   function handleCommit(): void {
+    if (includedCount === 0 || blocking > 0) return
     const flights: FlightEntry[] = []
     const editedIds: string[] = []
     rows.forEach((row, i) => {
@@ -172,7 +176,7 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
       flights.push(entry)
       if (row.edited) editedIds.push(flightId(entry))
     })
-    onCommit({ flights, editedIds, keptIds: [...kept] })
+    onCommit({ flights, editedIds, keptIds })
   }
 
   return (
@@ -204,21 +208,24 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
 
       <p className="review__hint">
         Nothing is saved yet. Compare each row against the print-out, fix anything the OCR misread,
-        and untick what you do not want. Edited rows overwrite what is already logged; untouched
-        rows only fill in blanks.
+        and untick what you do not want.{' '}
+        {pending.replaceYears.length > 0
+          ? 'Rows in CSV-covered years replace matching records. Existing flights absent from your selection are kept unless you untick them below.'
+          : 'Edited rows overwrite what is already logged; untouched rows only fill in blanks.'}
       </p>
 
-      <div className="review__stats">
+      <div className="review__stats" role="status">
         <span className="chip">{includedCount} selected</span>
         {blocking > 0 && <span className="chip chip--error">{blocking} must be fixed</span>}
         {warnings > 0 && <span className="chip chip--warn">{warnings} to check</span>}
         {known > 0 && <span className="chip chip--info">{known} already logged</span>}
+        {removalCount > 0 && <span className="chip chip--error">{removalCount} existing flights will be deleted</span>}
         {blocking === 0 && warnings === 0 && (
           <span className="chip chip--ok">Nothing looks wrong</span>
         )}
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap" role="region" aria-label="Flights to review" tabIndex={0}>
         <table className="flight-table review-table">
           <thead>
             <tr>
@@ -393,8 +400,8 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
             {removals.length} logged flight{removals.length === 1 ? '' : 's'} not in this file
           </h3>
           <p className="review__hint">
-            A CSV replaces the years it covers ({pending.replaceYears.join(', ')}), so these will be
-            deleted. Tick the ones you want to keep.
+            These flights in {pending.replaceYears.join(', ')} are kept by default. Only untick a
+            flight if you want to delete it when importing this CSV.
           </p>
           <ul className="review__removal-list">
             {removals.map((f) => {
@@ -404,7 +411,7 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
                   <label>
                     <input
                       type="checkbox"
-                      checked={kept.has(id)}
+                      checked={!removed.has(id)}
                       onChange={() => toggleKept(id)}
                     />
                     <span className="mono">{f.date}</span> {f.flightNo || '—'}{' '}
@@ -426,7 +433,7 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
         <span className="review__footer-text">
           {blocking > 0
             ? `${blocking} selected row(s) cannot be logged yet — fix them in the editor or untick them.`
-            : `${includedCount} of ${rows.length} rows will be added to the logbook.`}
+            : `${includedCount} of ${rows.length} rows will be imported. ${removalCount} existing flights will be deleted.`}
         </span>
         <div className="review__head-actions">
           <button type="button" className="btn btn--ghost" onClick={onCancel}>

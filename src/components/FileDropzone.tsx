@@ -3,36 +3,44 @@ import { useRef, useState } from 'react'
 interface Props {
   onFiles: (files: File[]) => void
   busy: boolean
+  disabled?: boolean
   progress: string
 }
 
-export function FileDropzone({ onFiles, busy, progress }: Props) {
+export function FileDropzone({ onFiles, busy, disabled = false, progress }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+  const unavailable = busy || disabled
 
   function handleFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return
+    if (unavailable || !fileList || fileList.length === 0) return
     onFiles([...fileList])
   }
 
   return (
+    <div>
     <div
-      className={`dropzone${dragging ? ' dropzone--active' : ''}${busy ? ' dropzone--busy' : ''}`}
+      className={`dropzone${dragging ? ' dropzone--active' : ''}${busy ? ' dropzone--busy' : ''}${disabled ? ' dropzone--disabled' : ''}`}
       onDragOver={(e) => {
         e.preventDefault()
-        setDragging(true)
+        if (!unavailable) setDragging(true)
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault()
         setDragging(false)
-        if (!busy) handleFiles(e.dataTransfer.files)
+        handleFiles(e.dataTransfer.files)
       }}
-      onClick={() => !busy && inputRef.current?.click()}
+      onClick={() => !unavailable && inputRef.current?.click()}
       role="button"
+      aria-disabled={unavailable}
+      aria-busy={busy}
       tabIndex={0}
       onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !busy) inputRef.current?.click()
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          if (!unavailable) inputRef.current?.click()
+        }
       }}
     >
       <input
@@ -41,6 +49,7 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
         accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.csv,application/pdf,image/*,text/csv"
         multiple
         hidden
+        disabled={unavailable}
         onChange={(e) => {
           handleFiles(e.target.files)
           e.target.value = ''
@@ -59,11 +68,14 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
           </div>
           <p className="dropzone__title">Drop a logbook photo, JPG, PDF, or exported CSV</p>
           <p className="dropzone__hint">
-            or click to browse — use JPG/PNG (not iPhone HEIC); photos are preprocessed and OCR’d
-            on-device
+            {disabled
+              ? 'Finish or discard the review below to upload another file.'
+              : 'Click to browse · PDF gives the best results · JPG/PNG photos are read on-device'}
           </p>
         </>
       )}
+    </div>
+    <p className="sr-only" role="status">{busy ? progress || 'Processing your logbook' : ''}</p>
     </div>
   )
 }

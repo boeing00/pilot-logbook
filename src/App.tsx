@@ -77,11 +77,18 @@ function sameBook(a: ParsedLogbook | null, b: ParsedLogbook | null): boolean {
   return JSON.stringify(a ?? EMPTY_BOOK) === JSON.stringify(b ?? EMPTY_BOOK)
 }
 
+function hasBookContent(book: ParsedLogbook | null): book is ParsedLogbook {
+  return Boolean(book && (book.flights.length || Object.keys(book.pilot).length || Object.keys(book.summary).length))
+}
+
 export default function App() {
   const [data, setData] = useState<ParsedLogbook | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
+  const [storageError, setStorageError] = useState(false)
+  const [search, setSearch] = useState('')
+  const [selectedYear, setSelectedYear] = useState('all')
   const [showForm, setShowForm] = useState(false)
   /** Prefill for the manual form, set when it is opened from a month card. */
   const [formSeed, setFormSeed] = useState<DraftSeed | null>(null)
@@ -96,6 +103,16 @@ export default function App() {
   const [syncError, setSyncError] = useState('')
   const dataRef = useRef<ParsedLogbook | null>(null)
   dataRef.current = data
+
+  function storeBook(next: ParsedLogbook | null, updatedAt?: number): boolean {
+    const saved = next ? saveLogbook(next, updatedAt) : clearLogbook(updatedAt)
+    setStorageError(!saved)
+    // A failed clear must leave the visible copy available for recovery/export.
+    if (!saved && !next) return false
+    dataRef.current = next
+    setData(next)
+    return saved
+  }
 
   useEffect(() => {
     setData(loadLogbook())
@@ -112,7 +129,7 @@ export default function App() {
   async function pushCloud(uid: string, book: ParsedLogbook | null): Promise<void> {
     try {
       setSyncState('saving')
-      if (book && book.flights.length > 0) {
+      if (hasBookContent(book)) {
         await saveCloudLogbook(uid, book)
       } else {
         await clearCloudLogbook(uid)
@@ -158,23 +175,16 @@ export default function App() {
         }
         const localAt = loadLogbookUpdatedAt()
         if (!local || updatedAtMs >= localAt) {
-          if (remote.flights.length > 0) {
-            setData(remote)
-            saveLogbook(remote)
-          } else {
-            setData(null)
-            clearLogbook()
-          }
+          storeBook(hasBookContent(remote) ? remote : null, updatedAtMs)
           // Rewrite legacy single-document cloud data in the sharded format.
           if (legacy) {
-            void pushCloud(uid, remote.flights.length > 0 ? remote : null)
+            void pushCloud(uid, hasBookContent(remote) ? remote : null)
           } else {
             setSyncState('synced')
           }
         } else {
           const merged = mergeLogbooks(local, remote)
-          setData({ ...merged })
-          saveLogbook(merged)
+          storeBook(merged)
           if (legacy || !sameBook(merged, remote)) {
             void pushCloud(uid, merged)
           } else {
@@ -183,14 +193,7 @@ export default function App() {
         }
         return
       }
-      if (sameBook(remote, local)) return
-      if (remote && remote.flights.length > 0) {
-        setData(remote)
-        saveLogbook(remote)
-      } else {
-        setData(null)
-        clearLogbook()
-      }
+      storeBook(hasBookContent(remote) ? remote : null, updatedAtMs)
       setSyncState('synced')
       setSyncError('')
       },
@@ -203,13 +206,7 @@ export default function App() {
 
   /** Update state + localStorage, and mirror to the cloud when signed in. */
   function persist(next: ParsedLogbook | null): void {
-    if (next && next.flights.length > 0) {
-      setData(next)
-      saveLogbook(next)
-    } else {
-      setData(null)
-      clearLogbook()
-    }
+    if (!storeBook(next) && !next) return
     if (user) void pushCloud(user.uid, next)
   }
 
@@ -223,12 +220,25 @@ export default function App() {
   }
 
   async function handleSignOut() {
-    await signOut()
+    try {
+      await signOut()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-out failed. Please try again.')
+    }
   }
 
   const months = useMemo(() => groupByMonth(data?.flights ?? []), [data])
   const years = useMemo(() => groupByYear(months), [months])
   const homeBase = useMemo(() => inferHomeBase(data?.flights ?? []), [data])
+  const activeYear = years.some((year) => year.year === selectedYear) ? selectedYear : 'all'
+  const query = search.trim().toLowerCase()
+  const filteredFlights = useMemo(() => (data?.flights ?? []).filter((flight) => {
+    if (activeYear !== 'all' && flight.date.slice(0, 4) !== activeYear) return false
+    const text = [flight.date, flight.date.replaceAll('/', '-'), flight.flightNo, flight.from, flight.to, `${flight.from}-${flight.to}`, flight.aircraft, flight.tail, `HL${flight.tail}`, flight.irr].join(' ').toLowerCase()
+    return query.split(/\s+/).every((term) => text.includes(term))
+  }), [data, activeYear, query])
+  const filteredYears = useMemo(() => groupByYear(groupByMonth(filteredFlights)), [filteredFlights])
+  const isFiltered = Boolean(query || activeYear !== 'all')
   /** Prefill the manual form with the airframe from the most recent sector. */
   const formDefaults = useMemo<DraftSeed>(() => {
     const last = data?.flights.at(-1)
@@ -256,6 +266,7 @@ export default function App() {
   const csvInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFiles(files: File[]) {
+    if (busy) return
     setError('')
     if (pending) {
       setError('Finish or discard the flights waiting for review before uploading another file.')
@@ -378,12 +389,11 @@ export default function App() {
   }
 
   function handleClear() {
-    if (user) {
-      const confirmed = window.confirm(
-        'You are signed in, so this also clears the logbook stored in the cloud for all your devices. Continue?',
-      )
-      if (!confirmed) return
-    }
+    const confirmed = window.confirm(
+      'Clear all flights, pilot details, and the career baseline? Export your flights first if needed.' +
+      (user ? '\nThis also clears the cloud logbook on all your devices.' : ''),
+    )
+    if (!confirmed) return
     persist(null)
     setError('')
   }
@@ -458,7 +468,7 @@ export default function App() {
         `${formatMinutes(flight.flightMin)} flight time${cloudNote}`,
     )
     if (!confirmed) return
-    persist(flights.length === 0 ? null : { ...data, flights })
+    persist({ ...data, flights })
   }
 
   function handleRemoveYear(year: string) {
@@ -472,7 +482,7 @@ export default function App() {
     )
     if (!confirmed) return
     const flights = data.flights.filter((f) => !f.date.startsWith(`${year}/`))
-    persist(flights.length === 0 ? null : { ...data, flights })
+    persist({ ...data, flights })
   }
 
   const hasData = Boolean(data && data.flights.length > 0)
@@ -498,11 +508,12 @@ export default function App() {
                 <span
                   className={`cloud__status cloud__status--${syncState}`}
                   title={syncError || undefined}
+                  role="status"
                 >
                   {syncState === 'saving' && 'Syncing…'}
                   {syncState === 'synced' && 'Synced'}
                   {syncState === 'error' && 'Sync error'}
-                  {syncState === 'offline' && 'Offline — saved on this device'}
+                  {syncState === 'offline' && (storageError ? 'Offline — device save failed' : 'Offline — saved on this device')}
                   {syncState === 'idle' && 'Connecting…'}
                 </span>
                 <span className="cloud__user" title={user.email ?? undefined}>
@@ -519,7 +530,7 @@ export default function App() {
             ))}
           <button
             type="button"
-            className="btn btn--ghost"
+            className="btn btn--primary"
             aria-expanded={showForm}
             title="Type in a single flight by hand"
             onClick={() => {
@@ -529,7 +540,7 @@ export default function App() {
           >
             {showForm ? 'Close form' : '+ Add flight'}
           </button>
-          {hasData && (
+          {data && (
             <>
               <button type="button" className="btn btn--ghost" onClick={handleExport}>
                 Export CSV
@@ -537,9 +548,9 @@ export default function App() {
               <button
                 type="button"
                 className="btn btn--ghost"
-                disabled={busy}
+                disabled={busy || Boolean(pending)}
                 onClick={() => csvInputRef.current?.click()}
-                title="Import an edited CSV \u2014 it overwrites the years it covers"
+                title="Review an edited CSV before saving; existing flights are kept by default"
               >
                 Import CSV
               </button>
@@ -554,7 +565,7 @@ export default function App() {
                   if (files.length > 0) void handleFiles(files)
                 }}
               />
-              <button type="button" className="btn btn--ghost" onClick={handleClear}>
+              <button type="button" className="btn btn--ghost btn--danger" disabled={busy || Boolean(pending)} onClick={handleClear}>
                 Clear
               </button>
             </>
@@ -563,7 +574,14 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        <FileDropzone onFiles={handleFiles} busy={busy} progress={progress} />
+        <FileDropzone onFiles={handleFiles} busy={busy} disabled={Boolean(pending)} progress={progress} />
+
+        {storageError && (
+          <p className="alert" role="alert">
+            Changes are not saved on this device. Keep this page open and export your flights before closing it.
+            {' '}Your browser storage may be full or unavailable.
+          </p>
+        )}
 
         {pending && (
           <ReviewPanel
@@ -590,17 +608,17 @@ export default function App() {
           </div>
         )}
 
-        {error && <p className="alert">{error}</p>}
+        {error && <p className="alert" role="alert">{error}</p>}
 
         {cloudEnabled && user && syncState === 'error' && (
-          <p className="alert">
-            Cloud sync failed — your logbook is still saved on this device.
+          <p className="alert" role="alert">
+            {storageError ? 'Cloud sync and device saving failed. Keep this page open and export your flights.' : 'Cloud sync failed — your logbook is still saved on this device.'}
             <br />
             <span className="alert__detail">{syncError}</span>
           </p>
         )}
 
-        {hasData && data && (
+        {data && (
           <>
             <SummaryCard
               pilot={data.pilot}
@@ -611,22 +629,46 @@ export default function App() {
 
             <CategorySummary flights={data.flights} />
 
-            {years.map((year) => (
+            {hasData && (
+              <section className="card logbook-tools" aria-label="Find flights">
+                <div className="logbook-tools__heading">
+                  <h2 className="card__title">Your flights</h2>
+                  <p className="card__subtitle" role="status">{filteredFlights.length} of {data.flights.length} flights</p>
+                </div>
+                <label className="field logbook-tools__search">
+                  <span className="field__label">Search flights</span>
+                  <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Flight, airport, aircraft or date" />
+                </label>
+                <label className="field">
+                  <span className="field__label">Year</span>
+                  <select value={activeYear} onChange={(event) => setSelectedYear(event.target.value)}>
+                    <option value="all">All years</option>
+                    {years.map((year) => <option key={year.year} value={year.year}>{year.year}</option>)}
+                  </select>
+                </label>
+                {isFiltered && <button className="btn btn--ghost" type="button" onClick={() => { setSearch(''); setSelectedYear('all') }}>Reset filters</button>}
+                {isFiltered && <p className="logbook-tools__note">Showing matching flights below. Career and category totals above include all flights.</p>}
+                {filteredFlights.length === 0 && <p className="logbook-tools__note">No flights match. Try another airport, flight number or year.</p>}
+              </section>
+            )}
+
+            {filteredYears.map((year) => (
               <div className="year-block" key={year.year}>
                 <YearSummary
                   year={year}
+                  filtered={Boolean(query)}
                   base={homeBase}
-                  onExportYear={handleExportYear}
-                  onRemoveYear={handleRemoveYear}
+                  onExportYear={query ? undefined : handleExportYear}
+                  onRemoveYear={query ? undefined : handleRemoveYear}
                 />
                 <div className="month-list">
                   {year.months.map((m, idx) => (
                     <MonthSection
-                      key={m.key}
+                      key={`${m.key}-${Boolean(query)}`}
                       group={m}
                       base={homeBase}
-                      defaultOpen={idx === 0}
-                      onExportMonth={handleExportMonth}
+                      defaultOpen={Boolean(query) || idx === 0}
+                      onExportMonth={query ? undefined : handleExportMonth}
                       onRemoveFlight={handleRemoveFlight}
                       onAddFlight={openFormForMonth}
                     />
@@ -637,9 +679,9 @@ export default function App() {
           </>
         )}
 
-        {!hasData && !busy && (
+        {!hasData && !busy && !pending && (
           <section className="empty">
-            <h2 className="empty__title">No logbook loaded yet</h2>
+            <h2 className="empty__title">No flights logged yet</h2>
             <p className="empty__text">
               Upload a scan or photo of your flight log above, or use{' '}
               <strong>+ Add flight</strong> to type a single sector in by hand. Flights are

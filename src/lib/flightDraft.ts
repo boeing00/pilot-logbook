@@ -94,6 +94,10 @@ export function draftFromFlight(f: FlightEntry): FlightDraft {
  */
 export function buildFlight(d: FlightDraft): FlightEntry | string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return 'Enter a date (YYYY-MM-DD).'
+  const calendarDate = new Date(`${d.date}T00:00:00Z`)
+  if (!Number.isFinite(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== d.date) {
+    return 'Enter a real calendar date.'
+  }
   if (d.aircraft.trim() === '') return 'Aircraft type is required (e.g. A380).'
 
   const times: Array<[label: string, raw: string]> = [
