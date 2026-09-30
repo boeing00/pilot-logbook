@@ -85,6 +85,8 @@ export default function App() {
   const [showForm, setShowForm] = useState(false)
   /** Prefill for the manual form, set when it is opened from a month card. */
   const [formSeed, setFormSeed] = useState<DraftSeed | null>(null)
+  /** A logged sector opened for correction from its month's table. */
+  const [editingFlight, setEditingFlight] = useState<FlightEntry | null>(null)
   const formRef = useRef<HTMLDivElement>(null)
   /** Parsed rows waiting for the pilot to check them; nothing is stored yet. */
   const [pending, setPending] = useState<PendingImport | null>(null)
@@ -247,10 +249,57 @@ export default function App() {
       aircraft: last?.aircraft,
       tail: last?.tail,
     })
+    setEditingFlight(null)
     setShowForm(true)
+    scrollToForm()
+  }
+
+  function scrollToForm() {
     requestAnimationFrame(() => {
       formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
     })
+  }
+
+  function closeForm() {
+    setShowForm(false)
+    setFormSeed(null)
+    setEditingFlight(null)
+  }
+
+  function openEditFlight(flight: FlightEntry) {
+    setFormSeed(null)
+    setEditingFlight(flight)
+    setShowForm(true)
+    scrollToForm()
+  }
+
+  /**
+   * Save a corrected sector over the original. Unlike adding, the identity may
+   * change (a misread date or tail), so the original is removed by its own id.
+   * If the corrected identity matches a different logged sector, that one is
+   * replaced too — only after the pilot confirms, since it is a second flight.
+   */
+  function handleUpdateFlight(original: FlightEntry, updated: FlightEntry) {
+    const book = data ?? EMPTY_BOOK
+    const oldId = flightId(original)
+    const newId = flightId(updated)
+    if (newId !== oldId && book.flights.some((f) => flightId(f) === newId)) {
+      const confirmed = window.confirm(
+        `Another logged flight is already ${updated.date} ${updated.flightNo} ` +
+          `${updated.from}→${updated.to} HL${updated.tail}.\nReplace it with this one?`,
+      )
+      if (!confirmed) return
+    }
+    const rest = book.flights.filter((f) => {
+      const id = flightId(f)
+      return id !== oldId && id !== newId
+    })
+    const flights = [...rest, updated].sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+    )
+    persist({ pilot: book.pilot, summary: book.summary, flights })
+    setError('')
+    closeForm()
   }
 
   const csvInputRef = useRef<HTMLInputElement>(null)
@@ -523,8 +572,13 @@ export default function App() {
             aria-expanded={showForm}
             title="Type in a single flight by hand"
             onClick={() => {
-              setFormSeed(null)
-              setShowForm((v) => !v)
+              if (showForm) {
+                closeForm()
+              } else {
+                setFormSeed(null)
+                setEditingFlight(null)
+                setShowForm(true)
+              }
             }}
           >
             {showForm ? 'Close form' : '+ Add flight'}
@@ -554,7 +608,12 @@ export default function App() {
                   if (files.length > 0) void handleFiles(files)
                 }}
               />
-              <button type="button" className="btn btn--ghost" onClick={handleClear}>
+              <button
+                type="button"
+                className="btn btn--ghost btn--danger"
+                onClick={handleClear}
+                title="Delete every logged flight"
+              >
                 Clear
               </button>
             </>
@@ -563,7 +622,7 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        <FileDropzone onFiles={handleFiles} busy={busy} progress={progress} />
+        <FileDropzone onFiles={handleFiles} busy={busy} progress={progress} compact={hasData} />
 
         {pending && (
           <ReviewPanel
@@ -577,15 +636,15 @@ export default function App() {
         {showForm && (
           <div ref={formRef}>
             <FlightForm
-              // Remounts when opened from a different month so the prefill
-              // takes effect instead of keeping the previous draft.
-              key={formSeed?.date ?? 'default'}
+              // Remounts when opened from a different month or for a different
+              // flight so the prefill takes effect instead of keeping the
+              // previous draft.
+              key={editingFlight ? `edit:${flightId(editingFlight)}` : (formSeed?.date ?? 'default')}
               onAdd={handleAddFlight}
-              onClose={() => {
-                setShowForm(false)
-                setFormSeed(null)
-              }}
+              onClose={closeForm}
               defaults={formSeed ?? formDefaults}
+              editing={editingFlight}
+              onUpdate={handleUpdateFlight}
             />
           </div>
         )}
@@ -629,6 +688,7 @@ export default function App() {
                       onExportMonth={handleExportMonth}
                       onRemoveFlight={handleRemoveFlight}
                       onAddFlight={openFormForMonth}
+                      onEditFlight={openEditFlight}
                     />
                   ))}
                 </div>

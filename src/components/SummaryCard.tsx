@@ -35,15 +35,19 @@ export function SummaryCard({ pilot, summary, flights, onSetBaseline }: Props) {
    * Only the three totals that can be recomputed from the sectors themselves
    * are carried. The captain and per-type figures depend on crew position,
    * which the flight rows do not record, so those stay as reported.
+   *
+   * A field the report did not supply (e.g. night when only the total was
+   * read) has no baseline to add to, so it is the sum of every logged sector —
+   * not just those after the as-of date, which would show a few hours as a
+   * career figure.
    */
   function carry(baselineMin: number | undefined, of: (f: FlightEntry) => number) {
-    const since = asOf
-      ? flights.reduce((sum, f) => (f.date > asOf ? sum + of(f) : sum), 0)
-      : baselineMin != null
-        ? 0
-        : flights.reduce((sum, f) => sum + of(f), 0)
-    const value = baselineMin != null ? baselineMin + since : since > 0 ? since : undefined
-    return { value, since }
+    if (baselineMin == null) {
+      const all = flights.reduce((sum, f) => sum + of(f), 0)
+      return { value: all > 0 ? all : undefined, since: null }
+    }
+    const since = asOf ? flights.reduce((sum, f) => (f.date > asOf ? sum + of(f) : sum), 0) : 0
+    return { value: baselineMin + since, since }
   }
 
   const total = carry(baseline, (f) => f.flightMin)
@@ -135,9 +139,18 @@ export function SummaryCard({ pilot, summary, flights, onSetBaseline }: Props) {
                 <>
                   {' '}
                   as of {asOf} · logged since:{' '}
-                  <strong>{formatMinutes(total.since)}</strong> flight,{' '}
-                  <strong>{formatMinutes(night.since)}</strong> night,{' '}
-                  <strong>{formatMinutes(instrument.since)}</strong> instrument
+                  {[
+                    { label: 'flight', since: total.since },
+                    { label: 'night', since: night.since },
+                    { label: 'instrument', since: instrument.since },
+                  ]
+                    .filter((p) => p.since != null)
+                    .map((p, i) => (
+                      <span key={p.label}>
+                        {i > 0 && ', '}
+                        <strong>{formatMinutes(p.since ?? 0)}</strong> {p.label}
+                      </span>
+                    ))}
                 </>
               ) : (
                 <> — no as-of date, so later flights are not being added yet</>

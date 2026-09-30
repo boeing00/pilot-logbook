@@ -6,9 +6,12 @@ interface Props {
   flights: FlightEntry[]
   /** Delete a single sector. The column is hidden when no handler is given. */
   onRemove?: (flight: FlightEntry) => void
+  /** Open a sector in the edit form. */
+  onEdit?: (flight: FlightEntry) => void
 }
 
-export function FlightTable({ flights, onRemove }: Props) {
+export function FlightTable({ flights, onRemove, onEdit }: Props) {
+  const hasActions = Boolean(onRemove || onEdit)
   return (
     <div className="table-wrap">
       <table className="flight-table">
@@ -25,7 +28,7 @@ export function FlightTable({ flights, onRemove }: Props) {
             <th className="num">Inst</th>
             <th className="center">T/O</th>
             <th className="center">L/D</th>
-            {onRemove && <th className="center col-remove" aria-label="Delete" />}
+            {hasActions && <th className="center col-remove" aria-label="Actions" />}
           </tr>
         </thead>
         <tbody>
@@ -63,17 +66,32 @@ export function FlightTable({ flights, onRemove }: Props) {
                 <td className="num mono">{formatMinutes(f.instrumentMin)}</td>
                 <td className="center mono">{f.takeoff ? '1' : <span className="dim">–</span>}</td>
                 <td className="center mono">{f.landing ? '1' : <span className="dim">–</span>}</td>
-                {onRemove && (
+                {hasActions && (
                   <td className="center col-remove">
-                    <button
-                      type="button"
-                      className="row-remove"
-                      aria-label={`Delete the ${f.date} flight ${f.flightNo} ${route}`}
-                      title="Delete this flight"
-                      onClick={() => onRemove(f)}
-                    >
-                      Delete
-                    </button>
+                    <div className="row-actions">
+                      {onEdit && (
+                        <button
+                          type="button"
+                          className="row-edit"
+                          aria-label={`Edit the ${f.date} flight ${f.flightNo} ${route}`}
+                          title="Edit this flight"
+                          onClick={() => onEdit(f)}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {onRemove && (
+                        <button
+                          type="button"
+                          className="row-remove"
+                          aria-label={`Delete the ${f.date} flight ${f.flightNo} ${route}`}
+                          title="Delete this flight"
+                          onClick={() => onRemove(f)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>

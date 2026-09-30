@@ -2,7 +2,13 @@ import { useState, type FormEvent } from 'react'
 import type { FlightEntry } from '../types'
 import { CATEGORY_LABELS, flightCategory } from '../lib/category'
 import { formatMinutes } from '../lib/time'
-import { buildFlight, emptyDraft, type DraftSeed, type FlightDraft } from '../lib/flightDraft'
+import {
+  buildFlight,
+  draftFromFlight,
+  emptyDraft,
+  type DraftSeed,
+  type FlightDraft,
+} from '../lib/flightDraft'
 import { FlightFields } from './FlightFields'
 
 interface Props {
@@ -11,6 +17,10 @@ interface Props {
   onClose: () => void
   /** Date / airframe to prefill, e.g. from the month the pilot opened it in. */
   defaults?: DraftSeed
+  /** A logged sector being corrected; the form then saves over it instead of adding. */
+  editing?: FlightEntry | null
+  /** Replace `original` with `updated`, even when the date, route, or tail changed. */
+  onUpdate?: (original: FlightEntry, updated: FlightEntry) => void
 }
 
 /**
@@ -18,9 +28,15 @@ interface Props {
  * AFLIS print-out (sim rides, ferry legs, a page the OCR could not read, or a
  * flight the pilot wants to log the same day). The resulting entry has exactly
  * the same shape as a parsed one, so it merges, exports, and syncs identically.
+ *
+ * Opened with `editing`, the same form corrects a logged sector in place. That
+ * covers the case adding cannot: a misread date, flight number, route, or tail
+ * changes the flight's identity, so "add again" would leave the bad row behind.
  */
-export function FlightForm({ onAdd, onClose, defaults }: Props) {
-  const [draft, setDraft] = useState<FlightDraft>(() => emptyDraft(defaults))
+export function FlightForm({ onAdd, onClose, defaults, editing, onUpdate }: Props) {
+  const [draft, setDraft] = useState<FlightDraft>(() =>
+    editing ? draftFromFlight(editing) : emptyDraft(defaults),
+  )
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
 
@@ -37,6 +53,10 @@ export function FlightForm({ onAdd, onClose, defaults }: Props) {
     e.preventDefault()
     if (typeof built === 'string') {
       setError(built)
+      return
+    }
+    if (editing && onUpdate) {
+      onUpdate(editing, built)
       return
     }
     const replaced = onAdd(built)
@@ -64,17 +84,31 @@ export function FlightForm({ onAdd, onClose, defaults }: Props) {
   }
 
   return (
-    <section className="card flight-form">
+    <section className={`card flight-form${editing ? ' flight-form--edit' : ''}`}>
       <div className="flight-form__head">
-        <h2 className="card__title">Add a flight manually</h2>
+        <h2 className="card__title">
+          {editing
+            ? `Edit ${editing.date} ${editing.flightNo}`.trim()
+            : 'Add a flight manually'}
+        </h2>
         <button type="button" className="btn btn--ghost btn--small" onClick={onClose}>
-          Close
+          {editing ? 'Cancel' : 'Close'}
         </button>
       </div>
       <p className="flight-form__hint">
-        For sectors that are not on an AFLIS print-out. Times accept H:MM (9:30) or decimal hours
-        (9.5). Adding a flight that already exists on the same date, flight number, route, and tail
-        overwrites it — that is how you correct a bad OCR row.
+        {editing ? (
+          <>
+            Correct any field, including the date, route, or tail. Saving replaces this sector.
+            Times accept H:MM (9:30) or decimal hours (9.5).
+          </>
+        ) : (
+          <>
+            For sectors that are not on an AFLIS print-out. Times accept H:MM (9:30) or decimal
+            hours (9.5). Adding a flight that already exists on the same date, flight number,
+            route, and tail overwrites it. To fix a logged row, use <strong>Edit</strong> on that
+            row in its month.
+          </>
+        )}
       </p>
 
       <form onSubmit={handleSubmit}>
@@ -92,7 +126,7 @@ export function FlightForm({ onAdd, onClose, defaults }: Props) {
             )}
           </span>
           <button type="submit" className="btn btn--primary">
-            Add flight
+            {editing ? 'Save changes' : 'Add flight'}
           </button>
         </div>
       </form>

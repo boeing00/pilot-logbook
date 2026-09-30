@@ -17,6 +17,8 @@ interface Props {
   onRemoveFlight?: (flight: FlightEntry) => void
   /** Open the manual entry form prefilled for this month. */
   onAddFlight?: (group: MonthGroup) => void
+  /** Open one sector in the edit form. */
+  onEditFlight?: (flight: FlightEntry) => void
 }
 
 export function MonthSection({
@@ -26,6 +28,7 @@ export function MonthSection({
   onExportMonth,
   onRemoveFlight,
   onAddFlight,
+  onEditFlight,
 }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const label = `${monthLabel(group.month)} ${group.year}`
@@ -82,7 +85,9 @@ export function MonthSection({
       </div>
       <CityStats flights={group.flights} base={base} compact />
 
-      {open && <FlightTable flights={group.flights} onRemove={onRemoveFlight} />}
+      {open && (
+        <FlightTable flights={group.flights} onRemove={onRemoveFlight} onEdit={onEditFlight} />
+      )}
     </section>
   )
 }

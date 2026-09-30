@@ -51,6 +51,26 @@ function normalizeDate(raw: string): string | null {
   return null
 }
 
+/**
+ * Duration cell. Excel re-saves an "11:05" cell it has parsed as a time as
+ * "11:05:00"; seconds are dropped rather than zeroing the whole sector.
+ */
+function csvDuration(raw: string): number {
+  const s = raw.trim().replace(/^'/, '')
+  const hms = s.match(/^(\d+):(\d{1,2}):\d{1,2}$/)
+  return parseDurationToMinutes(hms ? `${hms[1]}:${hms[2]}` : s)
+}
+
+/**
+ * T/O and L/D marker cell. Exports write "1" or leave it blank, but a pilot
+ * editing the sheet by hand tends to type 0 / N / FALSE for "no" — those must
+ * not count as a take-off or landing.
+ */
+function csvFlag(raw: string): boolean {
+  const s = raw.trim().toLowerCase()
+  return s !== '' && !['0', 'n', 'no', 'false', '-', '–'].includes(s)
+}
+
 function cell(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
   return value
@@ -202,12 +222,12 @@ export function csvToFlights(text: string): FlightEntry[] {
       irr: get(row, col.irr),
       reportOut: get(row, col.reportOut),
       reportIn: get(row, col.reportIn),
-      dutyMin: parseDurationToMinutes(get(row, col.duty)),
-      flightMin: parseDurationToMinutes(get(row, col.flight)),
-      nightMin: parseDurationToMinutes(get(row, col.night)),
-      instrumentMin: parseDurationToMinutes(get(row, col.instrument)),
-      takeoff: get(row, col.takeoff) !== '',
-      landing: get(row, col.landing) !== '',
+      dutyMin: csvDuration(get(row, col.duty)),
+      flightMin: csvDuration(get(row, col.flight)),
+      nightMin: csvDuration(get(row, col.night)),
+      instrumentMin: csvDuration(get(row, col.instrument)),
+      takeoff: csvFlag(get(row, col.takeoff)),
+      landing: csvFlag(get(row, col.landing)),
     })
   }
   return flights

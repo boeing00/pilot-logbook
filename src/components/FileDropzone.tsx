@@ -4,9 +4,14 @@ interface Props {
   onFiles: (files: File[]) => void
   busy: boolean
   progress: string
+  /**
+   * One-line bar instead of the full drop target. Once a logbook is loaded the
+   * big box only pushes the totals below the fold, on a phone by half a screen.
+   */
+  compact?: boolean
 }
 
-export function FileDropzone({ onFiles, busy, progress }: Props) {
+export function FileDropzone({ onFiles, busy, progress, compact = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -17,7 +22,8 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
 
   return (
     <div
-      className={`dropzone${dragging ? ' dropzone--active' : ''}${busy ? ' dropzone--busy' : ''}`}
+      className={`dropzone${compact ? ' dropzone--compact' : ''}${dragging ? ' dropzone--active' : ''}${busy ? ' dropzone--busy' : ''}`}
+      aria-label="Upload a logbook PDF, photo, or CSV"
       onDragOver={(e) => {
         e.preventDefault()
         setDragging(true)
@@ -52,6 +58,16 @@ export function FileDropzone({ onFiles, busy, progress }: Props) {
           <p className="dropzone__title">Processing…</p>
           <p className="dropzone__hint">{progress || 'Working on your logbook'}</p>
         </div>
+      ) : compact ? (
+        <p className="dropzone__compact">
+          <span className="dropzone__compact-icon" aria-hidden>
+            &#8679;
+          </span>
+          <span>
+            <strong>Upload another page</strong>
+            <span className="dropzone__compact-hint"> — drop or tap · PDF, JPG, PNG, CSV</span>
+          </span>
+        </p>
       ) : (
         <>
           <div className="dropzone__icon" aria-hidden>

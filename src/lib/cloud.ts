@@ -136,8 +136,14 @@ interface MetaState {
 /**
  * Subscribe to the user's cloud logbook (meta doc + years collection).
  * Emits only after both listeners have delivered their initial snapshot, and
- * skips snapshots caused by this client's own pending writes so local saves
- * don't echo back into state.
+ * only while neither side has pending writes from this client.
+ *
+ * Both listeners track metadata changes. Without that, the server's ack of
+ * our own batch is invisible on the years listener (the data did not change),
+ * while the meta listener does fire (serverTimestamp resolves) — the pair then
+ * emitted the new meta next to the pre-save years, and App rolled the flight
+ * that had just been added or deleted back out of state. It also left a
+ * listener that first answered from cache stuck on "offline" forever.
  *
  * `onError` matters: a Firestore listener that fails — rules not deployed, no
  * database created, a blocked connection — reports it here and nowhere else.
@@ -152,9 +158,12 @@ export function watchCloudLogbook(
   let years: Map<string, FlightEntry[]> | null = null
   let metaFromCache = true
   let yearsFromCache = true
+  let metaPending = false
+  let yearsPending = false
 
   const emit = () => {
     if (meta === null || years === null) return
+    if (metaPending || yearsPending) return
     const hasYearDocs = years.size > 0
     const fromCache = metaFromCache || yearsFromCache
     if (!meta.exists && !hasYearDocs) {
@@ -176,9 +185,10 @@ export function watchCloudLogbook(
   // Cached snapshots are still emitted, flagged rather than dropped: silently
   // discarding them is what left the status stuck on "Connecting…" whenever the
   // server could not be reached.
-  const unsubMeta = onSnapshot(metaRef(uid), {
+  const unsubMeta = onSnapshot(metaRef(uid), { includeMetadataChanges: true }, {
     next: (snap) => {
-      if (snap.metadata.hasPendingWrites) return
+      metaPending = snap.metadata.hasPendingWrites
+      if (metaPending) return
       metaFromCache = snap.metadata.fromCache
       const raw = snap.exists() ? snap.data() : {}
       meta = {
@@ -194,9 +204,10 @@ export function watchCloudLogbook(
     error: (err) => onError?.(err),
   })
 
-  const unsubYears = onSnapshot(yearsCol(uid), {
+  const unsubYears = onSnapshot(yearsCol(uid), { includeMetadataChanges: true }, {
     next: (snap) => {
-      if (snap.metadata.hasPendingWrites) return
+      yearsPending = snap.metadata.hasPendingWrites
+      if (yearsPending) return
       yearsFromCache = snap.metadata.fromCache
       const next = new Map<string, FlightEntry[]>()
       for (const d of snap.docs) {

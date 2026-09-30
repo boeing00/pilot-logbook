@@ -154,6 +154,29 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
     setRows((prev) => prev.map((r, i) => (set.has(i) ? { ...r, include } : r)))
   }
 
+  /**
+   * Rows that repeat an earlier selected row's identity. Uploading the same
+   * page twice (or a PDF plus a photo of it) flags every row red; this lets the
+   * pilot drop the second copies in one go instead of unticking them one by one.
+   */
+  const duplicateIndexes = useMemo(() => {
+    const seen = new Set<string>()
+    const out: number[] = []
+    rows.forEach((r, i) => {
+      const entry = analysis[i].entry
+      if (!r.include || !entry) return
+      const id = flightId(entry)
+      if (seen.has(id)) out.push(i)
+      else seen.add(id)
+    })
+    return out
+  }, [rows, analysis])
+
+  function untickDuplicates(): void {
+    const set = new Set(duplicateIndexes)
+    setRows((prev) => prev.map((r, i) => (set.has(i) ? { ...r, include: false, open: false } : r)))
+  }
+
   function toggleKept(id: string): void {
     setKept((prev) => {
       const next = new Set(prev)
@@ -213,8 +236,13 @@ export function ReviewPanel({ pending, existing, onCommit, onCancel }: Props) {
         {blocking > 0 && <span className="chip chip--error">{blocking} must be fixed</span>}
         {warnings > 0 && <span className="chip chip--warn">{warnings} to check</span>}
         {known > 0 && <span className="chip chip--info">{known} already logged</span>}
-        {blocking === 0 && warnings === 0 && (
+        {includedCount > 0 && blocking === 0 && warnings === 0 && (
           <span className="chip chip--ok">Nothing looks wrong</span>
+        )}
+        {duplicateIndexes.length > 0 && (
+          <button type="button" className="btn btn--ghost btn--small" onClick={untickDuplicates}>
+            Untick {duplicateIndexes.length} duplicate{duplicateIndexes.length === 1 ? '' : 's'}
+          </button>
         )}
       </div>
 

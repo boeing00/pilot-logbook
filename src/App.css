@@ -1174,3 +1174,143 @@
   opacity: 0.85;
   word-break: break-word;
 }
+
+/* Compact upload bar, shown once a logbook is loaded */
+.dropzone--compact {
+  padding: 12px 18px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.dropzone--compact .dropzone__busy {
+  flex-direction: row;
+  justify-content: center;
+  gap: 12px;
+}
+
+.dropzone--compact .spinner {
+  width: 20px;
+  height: 20px;
+}
+
+.dropzone--compact .dropzone__title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.dropzone__compact {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.dropzone__compact-icon {
+  color: var(--accent-2);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dropzone__compact-hint {
+  color: var(--text-mute);
+}
+
+.dropzone:focus-visible {
+  border-color: var(--accent);
+}
+
+/* Per-row Edit / Delete */
+.row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.row-edit {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 12px;
+  border-radius: 9px;
+  white-space: nowrap;
+}
+
+.row-edit:hover,
+.row-edit:focus-visible {
+  color: var(--accent-2);
+  border-color: var(--accent);
+  background: rgba(79, 176, 255, 0.12);
+}
+
+.flight-form--edit {
+  border-color: var(--accent);
+}
+
+@media (max-width: 620px) {
+  .app__header {
+    gap: 12px;
+  }
+
+  .brand__tag {
+    display: none;
+  }
+
+  /* Wrapped under the title, a right-aligned block reads as misplaced. */
+  .pilot {
+    text-align: left;
+  }
+
+  .app__actions .btn {
+    padding: 7px 12px;
+    font-size: 13px;
+  }
+
+  .dropzone:not(.dropzone--compact) {
+    padding: 24px 16px;
+  }
+
+  .dropzone__compact-hint {
+    display: none;
+  }
+
+  /* Two stats per row instead of one tall column of six. */
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .summary-grid__item {
+    padding: 10px 12px;
+  }
+
+  .summary-grid__value {
+    font-size: 24px;
+  }
+
+  .year__head {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .year__title {
+    font-size: 20px;
+  }
+
+  /* Keep the date visible while the wide table scrolls sideways. */
+  .flight-table:not(.review-table) th:first-child,
+  .flight-table:not(.review-table) td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--panel);
+  }
+
+  .flight-table:not(.review-table) thead th:first-child {
+    z-index: 2;
+    background: var(--sky-900);
+  }
+}
